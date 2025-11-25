@@ -1,14 +1,14 @@
 module game_state_controller (
-    input wire clk,                 // ½Ã½ºÅÛ Å¬·°
-    input wire rst_n,               // ºñµ¿±â ¸®¼Â (Active Low) - ½Ã½ºÅÛ ¸®¼Â
-    input wire i_btn_start,         // ÀÔ·Â: °ÔÀÓ ½ÃÀÛ ¹öÆ° (Debounced) 
-    input wire i_countdown_done,    // ÀÔ·Â: Timer·ÎºÎÅÍ 3ÃÊ Ä«¿îÆ® ¿Ï·á ½ÅÈ£ 
-    input wire i_collision,         // ÀÔ·Â: Collision Detector·ÎºÎÅÍ Ãæµ¹ °¨Áö ½ÅÈ£ 
+    input wire clk,                 // ì‹œìŠ¤í…œ í´ëŸ­
+    input wire rst_n,               // ë¹„ë™ê¸° ë¦¬ì…‹ (Active Low) - ì‹œìŠ¤í…œ ë¦¬ì…‹
+    input wire i_btn_start,         // ì…ë ¥: ê²Œì„ ì‹œì‘ ë²„íŠ¼ (Debounced) 
+    input wire i_countdown_done,    // ì…ë ¥: Timerë¡œë¶€í„° 3ì´ˆ ì¹´ìš´íŠ¸ ì™„ë£Œ ì‹ í˜¸ 
+    input wire i_collision,         // ì…ë ¥: Collision Detectorë¡œë¶€í„° ì¶©ëŒ ê°ì§€ ì‹ í˜¸ 
     
-    output reg [1:0] current_state, // ÇöÀç »óÅÂ Ãâ·Â (´Ù¸¥ ¸ğµâ Á¦¾î¿ë)
-    output reg o_system_init,       // IDLE »óÅÂ¿¡¼­ ³»ºÎ ·¹Áö½ºÅÍ ÃÊ±âÈ­ ½ÅÈ£ 
-    output reg o_timer_en,          // Timer È°¼ºÈ­ ½ÅÈ£
-    output reg o_game_active        // °ÔÀÓ ÁøÇà Áß (RUN) ½ÅÈ£
+    output reg [1:0] current_state, // í˜„ì¬ ìƒíƒœ ì¶œë ¥ (ë‹¤ë¥¸ ëª¨ë“ˆ ì œì–´ìš©)
+    output reg o_system_init,       // IDLE ìƒíƒœì—ì„œ ë‚´ë¶€ ë ˆì§€ìŠ¤í„° ì´ˆê¸°í™” ì‹ í˜¸ 
+    output reg o_timer_en,          // Timer í™œì„±í™” ì‹ í˜¸
+    output reg o_game_active        // ê²Œì„ ì§„í–‰ ì¤‘ (RUN) ì‹ í˜¸
 );
 
     // -------------------------------------------------------
@@ -23,7 +23,7 @@ module game_state_controller (
 
     // -------------------------------------------------------
     // Sequential Logic: State Register
-    // -------------------------------------------------------
+    // ------------------------------------------------------- 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             current_state <= S_IDLE;
@@ -41,7 +41,7 @@ module game_state_controller (
 
         case (current_state)
             // [state] IDLE 
-            // ½ÃÀÛ ½ÅÈ£°¡ °¨ÁöµÇ¸é COUNTDOWNÀ¸·Î ÀüÀÌ
+            // ì‹œì‘ ì‹ í˜¸ê°€ ê°ì§€ë˜ë©´ COUNTDOWNìœ¼ë¡œ ì „ì´
             S_IDLE: begin
                 if (i_btn_start) 
                     next_state = S_COUNTDOWN;
@@ -50,7 +50,7 @@ module game_state_controller (
             end
 
             // [state] COUNTDOWN 
-            // 3ÃÊ Ä«¿îÆ®´Ù¿î ¿Ï·á(Timer ½ÅÈ£)µÇ¸é RUNÀ¸·Î ÀüÀÌ
+            // 3ì´ˆ ì¹´ìš´íŠ¸ë‹¤ìš´ ì™„ë£Œ(Timer ì‹ í˜¸)ë˜ë©´ RUNìœ¼ë¡œ ì „ì´
             S_COUNTDOWN: begin
                 if (i_countdown_done)
                     next_state = S_RUN;
@@ -59,7 +59,7 @@ module game_state_controller (
             end
 
             // [state] RUN 
-            // Ãæµ¹ ½ÅÈ£(Collision)°¡ ¼ö½ÅµÇ¸é GAMEOVER·Î ÀüÀÌ
+            // ì¶©ëŒ ì‹ í˜¸(Collision)ê°€ ìˆ˜ì‹ ë˜ë©´ GAMEOVERë¡œ ì „ì´
             S_RUN: begin
                 if (i_collision)
                     next_state = S_GAMEOVER;
@@ -68,16 +68,16 @@ module game_state_controller (
             end
 
             // [state] GAMEOVER 
-            // Á¦¾È¼­ source 98: "½Ã½ºÅÛ ¸®¼ÂÀ» ´ë±âÇÑ´Ù"
-            // Á¦¾È¼­ source 104: "´ÙÀ½ Å¬·°¿¡ IDLE state·Î ÀüÀÌÇÑ´Ù" 
-            // (ÇØ¼®: ¸®¼Â ¹öÆ°ÀÌ ´­¸®°Å³ª, Æ¯Á¤ È®ÀÎ ÈÄ IDLE·Î µ¹¾Æ°¨. 
-            // ¿©±â¼­´Â ÇÏµå¿ş¾î rst_n¿¡ ÀÇÇØ IDLE·Î °¡´Â °ÍÀÌ ±âº»ÀÌÁö¸¸,
-            // ÀÚµ¿ º¹±Í¸¦ ¿øÇÒ °æ¿ì ¾Æ·¡ ÁÖ¼® ÇØÁ¦)
+            // ì œì•ˆì„œ source 98: "ì‹œìŠ¤í…œ ë¦¬ì…‹ì„ ëŒ€ê¸°í•œë‹¤"
+            // ì œì•ˆì„œ source 104: "ë‹¤ìŒ í´ëŸ­ì— IDLE stateë¡œ ì „ì´í•œë‹¤" 
+            // (í•´ì„: ë¦¬ì…‹ ë²„íŠ¼ì´ ëˆŒë¦¬ê±°ë‚˜, íŠ¹ì • í™•ì¸ í›„ IDLEë¡œ ëŒì•„ê°. 
+            // ì—¬ê¸°ì„œëŠ” í•˜ë“œì›¨ì–´ rst_nì— ì˜í•´ IDLEë¡œ ê°€ëŠ” ê²ƒì´ ê¸°ë³¸ì´ì§€ë§Œ,
+            // ìë™ ë³µê·€ë¥¼ ì›í•  ê²½ìš° ì•„ë˜ ì£¼ì„ í•´ì œ)
             S_GAMEOVER: begin
-                // rst_nÀÌ ´­¸®±â Àü±îÁö ´ë±â (Source 98 ±âÁØ)
+                // rst_nì´ ëˆŒë¦¬ê¸° ì „ê¹Œì§€ ëŒ€ê¸° (Source 98 ê¸°ì¤€)
                 next_state = S_GAMEOVER; 
                 
-                // ¸¸¾à Source 104(ÀÚµ¿ IDLE º¹±Í)¸¦ µû¸£°í ½Í´Ù¸é:
+                // ë§Œì•½ Source 104(ìë™ IDLE ë³µê·€)ë¥¼ ë”°ë¥´ê³  ì‹¶ë‹¤ë©´:
                 // next_state = S_IDLE; 
             end
             
@@ -89,33 +89,33 @@ module game_state_controller (
     // Output Logic: Control Signals per State
     // -------------------------------------------------------
     always @(*) begin
-        // ±âº»°ª ¼³Á¤ (Latch ¹æÁö)
+        // ê¸°ë³¸ê°’ ì„¤ì • (Latch ë°©ì§€)
         o_system_init = 1'b0;
         o_timer_en    = 1'b0;
         o_game_active = 1'b0;
 
         case (current_state)
             S_IDLE: begin
-                // ¸ğµç ³»ºÎ ·¹Áö½ºÅÍ¸¦ '0'À¸·Î ºñµ¿±â ¸®¼Â
+                // ëª¨ë“  ë‚´ë¶€ ë ˆì§€ìŠ¤í„°ë¥¼ '0'ìœ¼ë¡œ ë¹„ë™ê¸° ë¦¬ì…‹
                 o_system_init = 1'b1; 
             end
 
             S_COUNTDOWN: begin
-                // Å¸ÀÌ¸Ó È°¼ºÈ­ (Ä«¿îÆ®´Ù¿î ¸ğµå)
+                // íƒ€ì´ë¨¸ í™œì„±í™” (ì¹´ìš´íŠ¸ë‹¤ìš´ ëª¨ë“œ)
                 o_timer_en = 1'b1;
             end
 
             S_RUN: begin
-                // ¸ğµç °ÔÀÓ ·ÎÁ÷ ¸ğµâ È°¼ºÈ­
-                o_timer_en    = 1'b1; // Å¸ÀÌ¸Ó´Â °è¼Ó µ¿ÀÛ(ÇÃ·¹ÀÌ ½Ã°£ ÃøÁ¤)
-                o_game_active = 1'b1; // Character, Obstacle Á¦¾î¿ë
+                // ëª¨ë“  ê²Œì„ ë¡œì§ ëª¨ë“ˆ í™œì„±í™”
+                o_timer_en    = 1'b1; // íƒ€ì´ë¨¸ëŠ” ê³„ì† ë™ì‘(í”Œë ˆì´ ì‹œê°„ ì¸¡ì •)
+                o_game_active = 1'b1; // Character, Obstacle ì œì–´ìš©
             end
 
             S_GAMEOVER: begin
-                // RUN stateÀÇ ¸ğµç µ¿ÀÛ Á¤Áö
+                // RUN stateì˜ ëª¨ë“  ë™ì‘ ì •ì§€
                 o_timer_en    = 1'b0;
                 o_game_active = 1'b0;
-                // LCD Controller¿¡°Ô 'Game Over' Ãâ·Â Áö½Ã (current_state·Î ÆÇº°)
+                // LCD Controllerì—ê²Œ 'Game Over' ì¶œë ¥ ì§€ì‹œ (current_stateë¡œ íŒë³„)
             end
         endcase
     end
