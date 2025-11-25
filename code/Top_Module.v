@@ -1,106 +1,113 @@
-module Top_Sanjini_Run (
-    input  wire       clk,          // 50MHz
-    input  wire       rst,          // 보드 리셋 버튼 (Active High 가정)
-    input  wire       i_btn_start,
-    input  wire       i_btn_jump,
-
-    output wire [7:0] o_lcd_data,
-    output wire       o_lcd_rs,
-    output wire       o_lcd_rw,
-    output wire       o_lcd_en,
-    
-    output wire [7:0] o_seg_data,
-    output wire [7:0] o_seg_sel,
-    output wire       o_piezo
+module Top_Module (
+    input wire clk,
+    input wire rst_n,
+    input wire btn,
+    output reg [6:0] seg
 );
 
-    // =========================================================================
-    // 1. 내부 신호 및 리셋 처리
-    // =========================================================================
-    
-    // [중요] 리셋 신호 반전 (Active High 버튼 -> Active Low 모듈 입력)
-    wire rst_n;
-    assign rst_n = ~rst;  // 버튼을 안 눌렀을 때(0) -> 1(동작), 누르면(1) -> 0(리셋)
+    // ----------------------------
+    // 버튼 동기화 & 엣지 검출
+    // ----------------------------
+    reg btn_ff0, btn_ff1;
 
-    wire tick_1hz, tick_60hz;
-    wire start_clean, jump_clean;
-    wire [1:0] current_state;
-    
-    wire [3:0] timer_sec;
-    wire [7:0] char_y;
-    
-    // [수정] 장애물 모듈이 없으므로 임시로 0 할당 (Floating 방지)
-    wire [7:0] obs_x, obs_y;
-    assign obs_x = 8'd0; 
-    assign obs_y = 8'd0;
+    always @(posedge clk or negedge rst_n) begin
+        if (rst_n) begin
+            btn_ff0 <= 1'b0;
+            btn_ff1 <= 1'b0;
+        end else begin
+            btn_ff0 <= btn;
+            btn_ff1 <= btn_ff0;
+        end
+    end
 
-    // 기타 신호들
-    wire timer_done, collision_flag;
-    assign collision_flag = 0; // 충돌 없음 (무적 모드)
+    wire btn_rise = btn_ff0 & ~btn_ff1;
 
-    // =========================================================================
-    // 2. 모듈 연결 (rst 대신 rst_n 연결 확인!)
-    // =========================================================================
+    // ----------------------------
+    // 상태 정의 (Verilog 방식)
+    // ----------------------------
+    parameter S_IDLE = 2'b00;
+    parameter S_3    = 2'b01;
+    parameter S_2    = 2'b10;
+    parameter S_1    = 2'b11;
 
-    Clock_Divider u_clk_div (
-        .clk(clk),
-        .rst_n(rst_n),      // [수정] rst -> rst_n
-        .tick_1hz(tick_1hz),
-        .tick_60hz(tick_60hz)
-    );
+    reg [1:0] state, next_state;
 
-    Button_Debounce u_btn_start_inst (
-        .clk(clk),
-        .rst(rst),          // 디바운스는 내부 로직에 따라 rst/rst_n 맞춤 (여기선 rst 유지)
-        .i_btn(i_btn_start),
-        .o_btn_clean(start_clean)
-    );
+    // ----------------------------
+    // 딜레이 카운터
+    // ----------------------------
+    parameter DELAY = 25_000_000;
 
-    Button_Debounce u_btn_jump_inst (
-        .clk(clk),
-        .rst(rst),
-        .i_btn(i_btn_jump),
-        .o_btn_clean(jump_clean)
-    );
+    reg [31:0] cnt;
 
-    game_state_controller u_fsm (
-        .clk(clk),
-        .rst(rst),          // FSM 코드 확인 필요 (Active High/Low) -> 보통 rst 쓰면 High
-        .start_signal(start_clean),
-        .collision_signal(collision_flag),
-        .timer_done(timer_done),
-        .current_state(current_state)
-    );
+    wire cnt_done = (cnt == DELAY - 1);
 
-    Timer u_timer (
-        .clk(clk),
-        .rst(rst),          // Timer 코드 확인 필요
-        .tick_1hz(tick_1hz),
-        .current_state(current_state),
-        .o_time(timer_sec),
-        .o_timer_done(timer_done)
-    );
+    always @(posedge clk or negedge rst_n) begin
+        if (rst_n)
+            cnt <= 32'd0;
+        else begin
+            if (state == S_IDLE)
+                cnt <= 32'd0;
+            else if (cnt_done)
+                cnt <= 32'd0;
+            else
+                cnt <= cnt + 1;
+        end
+    end
 
-    Character_Controller u_char_ctrl (
-        .clk(clk),
-        .rst_n(rst_n),      // [수정] Active Low 입력 받음
-        .tick_60hz(tick_60hz),
-        .jump_signal(jump_clean),
-        .current_state(current_state),
-        .o_char_y(char_y)
-    );
+    // ----------------------------
+    // FSM next_state
+    // ----------------------------
+    always @(*) begin
+        case (state)
+            S_IDLE: begin
+                if (btn_rise) next_state = S_3;
+                else next_state = S_IDLE;
+            end
 
-    LCD_Controller u_lcd (
-        .clk(clk),
-        .rst_n(rst_n),      // [수정] Active Low 입력 받음
-        .current_state(current_state),
-        .char_y(char_y),
-        .obs_x(obs_x),      // 위에서 0으로 묶어둔 값 들어감
-        .obs_y(obs_y),
-        .o_lcd_data(o_lcd_data),
-        .o_lcd_rs(o_lcd_rs),
-        .o_lcd_en(o_lcd_en),
-        .o_lcd_rw(o_lcd_rw)
-    );
+            S_3: begin
+                if (cnt_done) next_state = S_2;
+                else next_state = S_3;
+            end
+
+            S_2: begin
+                if (cnt_done) next_state = S_1;
+                else next_state = S_2;
+            end
+
+            S_1: begin
+                if (cnt_done) next_state = S_IDLE;
+                else next_state = S_1;
+            end
+
+            default: next_state = S_IDLE;
+        endcase
+    end
+
+    // ----------------------------
+    // 상태 레지스터
+    // ----------------------------
+    always @(posedge clk or negedge rst_n) begin
+        if (rst_n)
+            state <= S_IDLE;
+        else
+            state <= next_state;
+    end
+
+    // ----------------------------
+    // 7세그 출력
+    // ----------------------------
+    localparam SEG_1   = 7'b0000110;
+    localparam SEG_2   = 7'b1011011;
+    localparam SEG_3   = 7'b1001111;
+    localparam SEG_OFF = 7'b1111111; //
+
+    always @(*) begin
+        case (state)
+            S_3: seg = SEG_3;
+            S_2: seg = SEG_2;
+            S_1: seg = SEG_1;
+            default: seg = SEG_OFF;
+        endcase
+    end
 
 endmodule
