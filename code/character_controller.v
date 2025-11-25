@@ -1,57 +1,58 @@
-module character_controller (
-    input wire clk,
-    input wire rst_n,
-    input wire i_game_active,   // RUN »óÅÂÀÏ ¶§¸¸ µ¿ÀÛ
-    input wire i_btn_jump,      // Á¡ÇÁ ¹öÆ° [cite: 88]
+module Character_Controller (
+    input wire clk,              // 50MHz Clock
+    input wire rst_n,            // Reset
+    input wire tick_60hz,        // ì• ë‹ˆë©”ì´ì…˜ í”„ë ˆì„ (ì´ˆë‹¹ 60íšŒ)
+    input wire jump_signal,      // ì í”„ ë²„íŠ¼ ì…ë ¥ (Pulse)
+    input wire [1:0] current_state, // ê²Œì„ ìƒíƒœ (IDLE, RUN...)
     
-    output reg [7:0] char_y,    // Ä³¸¯ÅÍ Y À§Ä¡
-    output reg [7:0] char_x     // Ä³¸¯ÅÍ X À§Ä¡ (°íÁ¤°ª)
+    output reg [7:0] o_char_y    // ìºë¦­í„° Y ì¢Œí‘œ (0: ê³µì¤‘, 1: ë°”ë‹¥)
 );
-    // ¹°¸® ÆÄ¶ó¹ÌÅÍ
-    localparam GROUND_Y = 8'd10; // ¹Ù´Ú À§Ä¡
-    localparam JUMP_MAX = 8'd50; // Á¡ÇÁ ÃÖ´ë ³ôÀÌ
-    
-    reg is_jumping;
-    reg jump_direction; // 0: »ó½Â, 1: ÇÏ°­
 
-    // Ä³¸¯ÅÍ X ÁÂÇ¥´Â È¾½ºÅ©·Ñ °ÔÀÓ Æ¯¼º»ó °íÁ¤ (ÁÂÃø ¹èÄ¡)
-    always @(posedge clk) char_x <= 8'd20; 
+    // ìƒíƒœ ì •ì˜
+    localparam IDLE      = 2'b00;
+    localparam COUNTDOWN = 2'b01;
+    localparam RUN       = 2'b10;
+    localparam GAMEOVER  = 2'b11;
 
-    // Á¡ÇÁ ·ÎÁ÷ (°£¼ÒÈ­µÈ ¹°¸® ¿£Áø)
-    // ½ÇÁ¦·Î´Â ´À¸° Å¬·°(enable ½ÅÈ£)À» »ç¿ëÇØ¾ß ¿òÁ÷ÀÓÀÌ º¸ÀÓ
-    reg [19:0] move_speed_cnt; // ¼Óµµ Á¶Àı¿ë
-    wire move_tick = (move_speed_cnt == 0);
+    // ì í”„ ì²´ê³µ ì‹œê°„ ì„¤ì • (60Hz ê¸°ì¤€)
+    // 30 ticks = 0.5ì´ˆ ë™ì•ˆ ê³µì¤‘ì— ë¨¸ë¬´ë¦„
+    parameter JUMP_DURATION = 30; 
+
+    reg [5:0] jump_timer; // ì í”„ ì‹œê°„ ì¹´ìš´í„°
+    reg is_jumping;       // í˜„ì¬ ì í”„ ì¤‘ì¸ì§€ ìƒíƒœ í”Œë˜ê·¸
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            char_y <= GROUND_Y;
+            o_char_y <= 1; // ë°”ë‹¥ ì´ˆê¸°í™”
+            jump_timer <= 0;
             is_jumping <= 0;
-            jump_direction <= 0;
-        end else if (i_game_active) begin
-            move_speed_cnt <= move_speed_cnt + 1;
+        end else begin
+            if (current_state == RUN) begin
+                // 1. ì í”„ ì‹œì‘ ë¡œì§ (ë°”ë‹¥ì— ìˆì„ ë•Œë§Œ ê°€ëŠ¥)
+                if (jump_signal && !is_jumping) begin
+                    is_jumping <= 1;
+                    o_char_y <= 0; // ê³µì¤‘ìœ¼ë¡œ ì´ë™
+                    jump_timer <= 0;
+                end
 
-            // Á¡ÇÁ ½ÃÀÛ Æ®¸®°Å
-            if (i_btn_jump && !is_jumping && char_y == GROUND_Y) begin
-                is_jumping <= 1;
-                jump_direction <= 0; // »ó½Â ½ÃÀÛ
-            end
-
-            // Á¡ÇÁ ¿òÁ÷ÀÓ Ã³¸®
-            if (is_jumping && move_tick) begin
-                if (jump_direction == 0) begin // »ó½Â
-                    if (char_y < JUMP_MAX) 
-                        char_y <= char_y + 1;
-                    else 
-                        jump_direction <= 1; // Á¤Á¡ µµ´Ş, ÇÏ°­ ÀüÈ¯
-                end else begin // ÇÏ°­
-                    if (char_y > GROUND_Y) 
-                        char_y <= char_y - 1;
-                    else begin
-                        is_jumping <= 0; // ÂøÁö ¿Ï·á
-                        char_y <= GROUND_Y;
+                // 2. ì í”„ ìœ ì§€ ë° ì°©ì§€ ë¡œì§
+                if (is_jumping && tick_60hz) begin
+                    if (jump_timer < JUMP_DURATION) begin
+                        jump_timer <= jump_timer + 1;
+                    end else begin
+                        // ì²´ê³µ ì‹œê°„ ì¢…ë£Œ -> ì°©ì§€
+                        is_jumping <= 0;
+                        o_char_y <= 1; // ë°”ë‹¥ìœ¼ë¡œ ë³µê·€
+                        jump_timer <= 0;
                     end
                 end
+            end else begin
+                // ê²Œì„ ì¤‘ì´ ì•„ë‹ˆë©´ í•­ìƒ ë°”ë‹¥ ìœ„ì¹˜, ë³€ìˆ˜ ì´ˆê¸°í™”
+                o_char_y <= 1;
+                is_jumping <= 0;
+                jump_timer <= 0;
             end
         end
     end
+
 endmodule
