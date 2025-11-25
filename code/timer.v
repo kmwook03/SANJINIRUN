@@ -1,16 +1,17 @@
 module timer (
     input wire clk,
     input wire rst_n,
-    input wire [1:0] current_state, // FSM »óÅÂ
+    input wire i_enable,          // [ì¶”ê°€] FSMì´ ë³´ë‚´ëŠ” í™œì„±í™” ì‹ í˜¸ ë°›ê¸°
+    input wire [1:0] current_state, 
     
-    output reg [3:0] countdown_val, // 3, 2, 1 Ç¥½Ã¿ë
-    output reg countdown_done,      // Ä«¿îÆ®´Ù¿î Á¾·á ½ÅÈ£
-    output reg [15:0] play_time     // °ÔÀÓ ÇÃ·¹ÀÌ ½Ã°£ (ÃÊ ´ÜÀ§)
+    output reg [3:0] countdown_val,
+    output reg countdown_done,
+    output reg [15:0] play_time
 );
     localparam S_COUNTDOWN = 2'b01;
     localparam S_RUN       = 2'b10;
     
-    // 1ÃÊ »ı¼ºÀ» À§ÇÑ Ä«¿îÅÍ (50MHz ±âÁØ: 50,000,000 - 1)
+    // 1ì´ˆ ìƒì„±ì„ ìœ„í•œ ì¹´ìš´í„° (50MHz ê¸°ì¤€: 50,000,000 - 1)
     reg [25:0] clk_cnt;
     wire tick_1s = (clk_cnt == 26'd49_999_999);
 
@@ -20,30 +21,29 @@ module timer (
         else clk_cnt <= clk_cnt + 1;
     end
 
-    // ¸ŞÀÎ Å¸ÀÌ¸Ó ·ÎÁ÷
+    // ë©”ì¸ íƒ€ì´ë¨¸ ë¡œì§
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             countdown_val <= 3;
             countdown_done <= 0;
             play_time <= 0;
         end else begin
-            if (current_state == S_COUNTDOWN) begin
-                if (tick_1s) begin
-                    if (countdown_val > 1) 
-                        countdown_val <= countdown_val - 1;
-                    else begin
-                        countdown_val <= 0;
-                        countdown_done <= 1; // 0ÀÌ µÇ¸é ¿Ï·á ½ÅÈ£ [cite: 76]
-                    end
+            // [ìˆ˜ì •] i_enable ì‹ í˜¸ê°€ 1ì¼ ë•Œë§Œ ë™ì‘í•˜ë„ë¡ ë³€ê²½
+            if (i_enable) begin 
+                if (current_state == 2'b01) begin // S_COUNTDOWN
+                     // ... ì¹´ìš´íŠ¸ë‹¤ìš´ ë¡œì§ (ê¸°ì¡´ê³¼ ë™ì¼)
+                     if (tick_1s) begin
+                        if (countdown_val > 0) countdown_val <= countdown_val - 1; // 0ê¹Œì§€ ê°€ë„ë¡ ìˆ˜ì •
+                        if (countdown_val == 1) countdown_done <= 1; // 1->0 ë„˜ì–´ê°ˆ ë•Œ ì™„ë£Œ ì‹ í˜¸
+                     end
+                end else if (current_state == 2'b10) begin // S_RUN
+                     // ... í”Œë ˆì´ ì‹œê°„ ë¡œì§ (ê¸°ì¡´ê³¼ ë™ì¼)
                 end
-            end else if (current_state == S_RUN) begin
-                countdown_done <= 0; // ¸®¼Â
-                if (tick_1s) 
-                    play_time <= play_time + 1; // [cite: 81] Ä«¿îÆ®¾÷
             end else begin
-                // IDLE µî¿¡¼­´Â ÃÊ±â°ª À¯Áö
+                // íƒ€ì´ë¨¸ êº¼ì§ (IDLE ìƒíƒœ ë“±) -> ë¦¬ì…‹
                 countdown_val <= 3;
-                play_time <= 0;
+                countdown_done <= 0;
+                // play_timeì€ ìœ ì§€í•˜ê±°ë‚˜ ë¦¬ì…‹ (ê²Œì„ ê¸°íšì— ë”°ë¼ ê²°ì •)
             end
         end
     end
