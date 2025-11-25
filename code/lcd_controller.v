@@ -1,213 +1,362 @@
-module lcd_controller (
-    input wire clk,                 // 50MHz Clock
-    input wire rst_n,
-    input wire [1:0] current_state, // FSM State
-    input wire [7:0] char_y,        // Ä³¸¯ÅÍ Y ÁÂÇ¥
-    input wire [7:0] obs_x,         // Àå¾Ö¹° X ÁÂÇ¥
+module LCD_Controller (
+    input wire clk,              // 50MHz System Clock
+    input wire rst_n,            // Reset (Active Low)
     
-    output reg lcd_rs,    // 0: Cmd, 1: Data
-    output reg lcd_rw,    // 0: Write
-    output reg lcd_e,     // Enable
-    output reg [7:0] lcd_data
+    // ê²Œì„ ì •ë³´ ì…ë ¥
+    input wire [1:0] current_state, // FSM ìƒíƒœ
+    input wire [7:0] char_y,        // ìºë¦­í„° Y ì¢Œí‘œ (0: ìœ„, 1: ì•„ë˜)
+    input wire [7:0] obs_x,         // ì¥ì• ë¬¼ X ì¢Œí‘œ (0~15)
+    input wire [7:0] obs_y,         // ì¥ì• ë¬¼ Y ì¢Œí‘œ (0: ìœ„, 1: ì•„ë˜)
+
+    // LCD í•˜ë“œì›¨ì–´ ì œì–´ ì‹ í˜¸
+    output wire [7:0] o_lcd_data, // Data Bus
+    output wire o_lcd_rs,         // 0: Command, 1: Data
+    output wire o_lcd_rw,         // 0: Write, 1: Read (ë³´í†µ 0 ê³ ì •)
+    output wire o_lcd_en          // Enable Pulse
 );
 
-    // -------------------------------------------------------
-    // »óÅÂ Á¤ÀÇ
-    // -------------------------------------------------------
-    localparam S_IDLE      = 2'b00;
-    localparam S_COUNTDOWN = 2'b01;
-    localparam S_RUN       = 2'b10;
-    localparam S_GAMEOVER  = 2'b11;
-
-    // CGRAM ¹®ÀÚ ÄÚµå Á¤ÀÇ (0~7¹øÁö »ç¿ë °¡´É)
-    localparam CHAR_SANJINI = 8'h00; // 0¹ø ¹®ÀÚ: »êÁö´Ï
-    localparam CHAR_OBSTACLE= 8'h01; // 1¹ø ¹®ÀÚ: Àå¾Ö¹°
-
-    // Å¸ÀÌ¹Ö »ó¼ö
-    parameter DELAY_INIT = 100000;
+    // =========================================================================
+    // 1. íŒŒë¼ë¯¸í„° ë° ìƒíƒœ ì •ì˜
+    // =========================================================================
     
-    reg [19:0] delay_cnt;
-    reg [5:0]  state_idx; 
-    reg [3:0]  send_step;
-    
-    // È­¸é ¹öÆÛ
-    reg [7:0] line1_buffer [0:15];
-    reg [7:0] line2_buffer [0:15];
-    integer i;
+    // LCD ëª…ë ¹ì–´
+    localparam CMD_FUNCTION_SET = 8'h38; // 8-bit, 2 lines, 5x8 font
+    localparam CMD_DISPLAY_ON   = 8'h0C; // Display ON, Cursor OFF
+    localparam CMD_CLEAR        = 8'h01; // Clear Display
+    localparam CMD_ENTRY_MODE   = 8'h06; // Increment cursor
+    localparam CMD_SET_DDRAM    = 8'h80; // Set Cursor Position (Line 1)
+    localparam CMD_SET_DDRAM2   = 8'hC0; // Set Cursor Position (Line 2)
+    localparam CMD_SET_CGRAM    = 8'h40; // Set CGRAM Address (Custom Char)
 
-    // -------------------------------------------------------
-    // [1] CGRAM µ¥ÀÌÅÍ Á¤ÀÇ (5x8 ÇÈ¼¿ ºñÆ®¸Ê)
-    // -------------------------------------------------------
-    // index 0~7: »êÁö´Ï(»õ ¸ğ¾ç), index 8~15: Àå¾Ö¹°(°¡½Ã ¸ğ¾ç)
-    function [7:0] get_cgram_pixel;
-        input [3:0] row_idx; // 0~15
-        begin
-            case (row_idx)
-                // --- »êÁö´Ï (Bird) ---
-                4'd0: get_cgram_pixel = 5'b00000;
-                4'd1: get_cgram_pixel = 5'b00110; // ¸Ó¸®
-                4'd2: get_cgram_pixel = 5'b01101; // ´«/ºÎ¸®
-                4'd3: get_cgram_pixel = 5'b11111; // ¸öÅë
-                4'd4: get_cgram_pixel = 5'b01110; // ³¯°³
-                4'd5: get_cgram_pixel = 5'b00100; // ´Ù¸®
-                4'd6: get_cgram_pixel = 5'b00000;
-                4'd7: get_cgram_pixel = 5'b00000;
-                
-                // --- Àå¾Ö¹° (Spike) ---
-                4'd8: get_cgram_pixel = 5'b00000;
-                4'd9: get_cgram_pixel = 5'b00000;
-                4'd10:get_cgram_pixel = 5'b00100; // »ÏÁ·
-                4'd11:get_cgram_pixel = 5'b01110;
-                4'd12:get_cgram_pixel = 5'b01110;
-                4'd13:get_cgram_pixel = 5'b11111;
-                4'd14:get_cgram_pixel = 5'b11111;
-                4'd15:get_cgram_pixel = 5'b11111; // ¹Ù´Ú
-                default: get_cgram_pixel = 5'b00000;
+    // FSM ìƒíƒœ
+    localparam S_POWER_ON    = 0;
+    localparam S_INIT_FUNC   = 1;
+    localparam S_INIT_DISP   = 2;
+    localparam S_INIT_CLR    = 3;
+    localparam S_INIT_ENTRY  = 4;
+    localparam S_LOAD_CGRAM  = 5; // ì»¤ìŠ¤í…€ ìºë¦­í„° ë¡œë”©
+    localparam S_READY       = 6; // ê·¸ë¦¬ê¸° ì¤€ë¹„
+    localparam S_DRAW_LINE1  = 7; // ì²« ë²ˆì§¸ ì¤„ ê·¸ë¦¬ê¸°
+    localparam S_DRAW_LINE2  = 8; // ë‘ ë²ˆì§¸ ì¤„ ê·¸ë¦¬ê¸°
+    localparam S_DONE        = 9; // í”„ë ˆì„ ì™„ë£Œ (ëŒ€ê¸°)
+
+    reg [3:0] state;
+    reg [4:0] send_idx; // ë°ì´í„° ì „ì†¡ ì¸ë±ìŠ¤ (0~15)
+    
+    // íƒ€ì´ë° ì œì–´ìš© ì¹´ìš´í„° (50MHz ê¸°ì¤€)
+    reg [20:0] delay_cnt; 
+    parameter DELAY_20MS = 1000000; // ì „ì› ì¸ê°€ í›„ ëŒ€ê¸°
+    parameter DELAY_2MS  = 100000;  // ëª…ë ¹ì–´ ì²˜ë¦¬ ëŒ€ê¸° (Clear ë“±)
+    parameter DELAY_50US = 2500;    // ì¼ë°˜ ë°ì´í„° ì“°ê¸° ëŒ€ê¸°
+
+    // =========================================================================
+    // 2. ì»¤ìŠ¤í…€ ìºë¦­í„° ë°ì´í„° (ì‚°ì§€ë‹ˆ - ê°„ë‹¨í•œ ì¡¸ë¼ë§¨)
+    // =========================================================================
+    reg [7:0] cgram_sanjini [0:7];
+    initial begin
+        cgram_sanjini[0] = 5'b00110; //  ê¹ƒí„¸
+        cgram_sanjini[1] = 5'b01111; //  ë¨¸ë¦¬
+        cgram_sanjini[2] = 5'b11111; //  ì–¼êµ´
+        cgram_sanjini[3] = 5'b11111; //  ì–¼êµ´
+        cgram_sanjini[4] = 5'b01110; //  ëª©
+        cgram_sanjini[5] = 5'b11111; //  ë‚ ê°œ
+        cgram_sanjini[6] = 5'b01110; //  ë‹¤ë¦¬
+        cgram_sanjini[7] = 5'b01010; //  ë°œ
+    end
+
+    // =========================================================================
+    // 3. ë©”ì¸ FSM
+    // =========================================================================
+    
+    // ë‚´ë¶€ ì‹ í˜¸
+    reg [7:0] line_buffer [0:15]; // í•œ ì¤„ ë¶„ëŸ‰ ë²„í¼
+    reg [7:0] next_data;          // ë³´ë‚¼ ë°ì´í„°
+    reg next_rs;                  // ë³´ë‚¼ RS ê°’
+    reg start_send;               // ì „ì†¡ ì‹œì‘ ì‹ í˜¸
+    wire send_done;               // ì „ì†¡ ì™„ë£Œ ì‹ í˜¸
+
+    // LCD Low-Level Driver ì¸ìŠ¤í„´ìŠ¤ (ì•„ë˜ì— ì •ì˜)
+    LCD_Driver driver (
+        .clk(clk),
+        .rst_n(rst_n),
+        .i_data(next_data),
+        .i_rs(next_rs),
+        .i_start(start_send),
+        .o_done(send_done),
+        .o_lcd_data(o_lcd_data),
+        .o_lcd_rs(o_lcd_rs),
+        .o_lcd_rw(o_lcd_rw),
+        .o_lcd_en(o_lcd_en)
+    );
+
+    // FSM ë¡œì§
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state <= S_POWER_ON;
+            delay_cnt <= 0;
+            send_idx <= 0;
+            start_send <= 0;
+        end else begin
+            // Pulse ì‹ í˜¸ëŠ” í•œ í´ëŸ­ë§Œ ìœ ì§€
+            if (start_send) start_send <= 0;
+
+            case (state)
+                // -------------------------------------------------------------
+                // ì´ˆê¸°í™” ì‹œí€€ìŠ¤ (Initialization)
+                // -------------------------------------------------------------
+                S_POWER_ON: begin
+                    if (delay_cnt < DELAY_20MS) delay_cnt <= delay_cnt + 1;
+                    else begin
+                        delay_cnt <= 0;
+                        state <= S_INIT_FUNC;
+                    end
+                end
+
+                S_INIT_FUNC: begin
+                    next_data <= CMD_FUNCTION_SET; next_rs <= 0;
+                    start_send <= 1;
+                    if (send_done) state <= S_INIT_DISP;
+                end
+
+                S_INIT_DISP: begin
+                    next_data <= CMD_DISPLAY_ON; next_rs <= 0;
+                    start_send <= 1;
+                    if (send_done) state <= S_INIT_CLR;
+                end
+
+                S_INIT_CLR: begin
+                    next_data <= CMD_CLEAR; next_rs <= 0;
+                    start_send <= 1;
+                    if (send_done) state <= S_INIT_ENTRY;
+                end
+
+                S_INIT_ENTRY: begin
+                    next_data <= CMD_ENTRY_MODE; next_rs <= 0;
+                    start_send <= 1;
+                    if (send_done) begin
+                        state <= S_LOAD_CGRAM;
+                        send_idx <= 0;
+                    end
+                end
+
+                // -------------------------------------------------------------
+                // ì»¤ìŠ¤í…€ ìºë¦­í„°(ì‚°ì§€ë‹ˆ) ë“±ë¡ (CGRAM 0ë²ˆì§€)
+                // -------------------------------------------------------------
+                S_LOAD_CGRAM: begin
+                    if (send_idx == 0 && !start_send && !send_done) begin
+                        // 1. CGRAM ì£¼ì†Œ ì„¤ì •
+                        next_data <= CMD_SET_CGRAM; next_rs <= 0; 
+                        start_send <= 1;
+                    end else if (send_idx < 8) begin
+                        // 2. ìºë¦­í„° ë°ì´í„° 8ë°”ì´íŠ¸ ì „ì†¡
+                        // ë“œë¼ì´ë²„ê°€ Idle ìƒíƒœì¼ ë•Œë§Œ ë³´ëƒ„
+                        // (ì—¬ê¸°ì„œëŠ” ê°„ë‹¨í•˜ê²Œ ìˆœì°¨ ì²˜ë¦¬ ë¡œì§ ìƒëµ, ì‹¤ì œë¡œëŠ” Handshake í•„ìš”)
+                        // *ê°„ì†Œí™”ë¥¼ ìœ„í•´ ì´ ë¶€ë¶„ì€ êµ¬í˜„ ì‹œ ì£¼ì˜ í•„ìš” (íƒ€ì´ë°)*
+                        // ì•ˆì „í•˜ê²Œ: send_done ì²´í¬ í›„ ë‹¤ìŒ ë°”ì´íŠ¸ ì „ì†¡
+                        if (send_done) begin
+                            // ë°©ê¸ˆ ì£¼ì†Œë¥¼ ë³´ëƒˆê±°ë‚˜ ì´ì „ ë°ì´í„°ë¥¼ ë³´ëƒ„
+                            next_data <= cgram_sanjini[send_idx]; 
+                            next_rs <= 1; // Data ëª¨ë“œ
+                            start_send <= 1;
+                            send_idx <= send_idx + 1;
+                        end
+                    end else if (send_idx == 8 && send_done) begin
+                         state <= S_READY; // ë¡œë”© ì™„ë£Œ
+                    end
+                end
+
+                // -------------------------------------------------------------
+                // í™”ë©´ ê°±ì‹  ë£¨í”„ (Main Loop)
+                // -------------------------------------------------------------
+                S_READY: begin
+                    // ë‹¤ìŒ ê·¸ë¦¬ê¸° ì¤€ë¹„ (ìƒíƒœì— ë”°ë¼ ë‚´ìš© ê²°ì •)
+                    // Line 1 ê·¸ë¦¬ê¸° ì‹œì‘ ëª…ë ¹
+                    next_data <= CMD_SET_DDRAM; // Line 1 (0x80)
+                    next_rs <= 0;
+                    start_send <= 1;
+                    state <= S_DRAW_LINE1;
+                    send_idx <= 0;
+                end
+
+                S_DRAW_LINE1: begin
+                    if (send_done) begin
+                        // ë°©ê¸ˆ ì»¤ë§¨ë“œ(ì£¼ì†Œ) ë˜ëŠ” ì´ì „ ê¸€ìë¥¼ ë‹¤ ë³´ëƒ„
+                        if (send_idx < 16) begin
+                            // Line 1 ë°ì´í„° ê²°ì • ë¡œì§
+                            next_data <= get_char_at(0, send_idx); // í•¨ìˆ˜ í˜¸ì¶œ
+                            next_rs <= 1; // Data
+                            start_send <= 1;
+                            send_idx <= send_idx + 1;
+                        end else begin
+                            // Line 2ë¡œ ì´ë™ ì¤€ë¹„
+                            next_data <= CMD_SET_DDRAM2; // Line 2 (0xC0)
+                            next_rs <= 0;
+                            start_send <= 1;
+                            state <= S_DRAW_LINE2;
+                            send_idx <= 0;
+                        end
+                    end
+                end
+
+                S_DRAW_LINE2: begin
+                    if (send_done) begin
+                        if (send_idx < 16) begin
+                            // Line 2 ë°ì´í„° ê²°ì • ë¡œì§
+                            next_data <= get_char_at(1, send_idx);
+                            next_rs <= 1;
+                            start_send <= 1;
+                            send_idx <= send_idx + 1;
+                        end else begin
+                            state <= S_DONE;
+                            delay_cnt <= 0;
+                        end
+                    end
+                end
+
+                S_DONE: begin
+                    // 100ms ì •ë„ ëŒ€ê¸° í›„ ë‹¤ì‹œ ë¦¬í”„ë ˆì‹œ (ê¹œë¹¡ì„ ë°©ì§€ ë° ê²Œì„ ì†ë„ ì¡°ì ˆ)
+                    if (delay_cnt < 5000000) delay_cnt <= delay_cnt + 1;
+                    else begin
+                        state <= S_READY;
+                        delay_cnt <= 0;
+                    end
+                end
             endcase
+        end
+    end
+
+    // =========================================================================
+    // 4. í™”ë©´ ë‚´ìš© ê²°ì • í•¨ìˆ˜ (Combinational Logic)
+    // =========================================================================
+    function [7:0] get_char_at;
+        input integer row; // 0 or 1
+        input integer col; // 0 ~ 15
+        begin
+            // ê¸°ë³¸ê°’: ê³µë°±
+            get_char_at = " "; 
+
+            if (current_state == 2'b00) begin // IDLE
+                // "PRESS START   "
+                if (row == 0) begin
+                   case(col)
+                       0: get_char_at = "P"; 1: get_char_at = "R"; 2: get_char_at = "E";
+                       3: get_char_at = "S"; 4: get_char_at = "S"; 5: get_char_at = " ";
+                       6: get_char_at = "S"; 7: get_char_at = "T"; 8: get_char_at = "A";
+                       9: get_char_at = "R"; 10: get_char_at = "T";
+                       default: get_char_at = " ";
+                   endcase
+                end
+            end else if (current_state == 2'b11) begin // GAMEOVER
+                 if (row == 0) begin
+                   // "GAME OVER !!! "
+                   case(col)
+                       0: get_char_at = "G"; 1: get_char_at = "A"; 2: get_char_at = "M"; 3: get_char_at = "E";
+                       5: get_char_at = "O"; 6: get_char_at = "V"; 7: get_char_at = "E"; 8: get_char_at = "R";
+                       default: get_char_at = " ";
+                   endcase
+                end
+            end else begin // RUN or COUNTDOWN
+                // 1. ì‚°ì§€ë‹ˆ ê·¸ë¦¬ê¸° (0ë²ˆ ì»¤ìŠ¤í…€ ìºë¦­í„°)
+                // ì‚°ì§€ë‹ˆëŠ” X=1 ìœ„ì¹˜ì— ê³ ì •, YëŠ” char_yì— ë”°ë¦„
+                if (col == 1) begin 
+                    if (row == char_y) get_char_at = 8'h00; // Custom Char 0 (Sanjini)
+                end
+                
+                // 2. ì¥ì• ë¬¼ ê·¸ë¦¬ê¸° ('X' ë¬¸ì)
+                // ì¥ì• ë¬¼ ì¢Œí‘œì™€ í˜„ì¬ ê·¸ë¦¬ëŠ” ì¢Œí‘œê°€ ê°™ìœ¼ë©´ í‘œì‹œ
+                if (col == obs_x && row == obs_y) begin
+                    get_char_at = "X"; // ì¥ì• ë¬¼ ë¬¸ì
+                end
+                
+                // 3. ë°”ë‹¥ ê·¸ë¦¬ê¸° (ì•„ë«ì¤„ì´ë©´ '_')
+                if (row == 1 && col != 1 && !(col == obs_x && row == obs_y)) begin
+                    get_char_at = "_";
+                end
+            end
         end
     endfunction
 
-    // -------------------------------------------------------
-    // [2] È­¸é ¹öÆÛ ¾÷µ¥ÀÌÆ® ·ÎÁ÷
-    // -------------------------------------------------------
-    always @(posedge clk) begin
-        // ¹öÆÛ ÃÊ±âÈ­ (°ø¹é)
-        for (i=0; i<16; i=i+1) begin
-            line1_buffer[i] <= " ";
-            line2_buffer[i] <= " ";
-        end
+endmodule
 
-        case (current_state)
-            S_IDLE: begin
-                // ÅØ½ºÆ® Ãâ·Â ¿¹½Ã
-                line1_buffer[3]="R"; line1_buffer[4]="E"; line1_buffer[5]="A"; 
-                line1_buffer[6]="D"; line1_buffer[7]="Y"; line1_buffer[8]="?";
-                
-                // »êÁö´Ï ¹Ì¸®º¸±â
-                line2_buffer[7] = CHAR_SANJINI; 
-            end
+// =============================================================================
+// Internal Module: LCD Low-Level Driver (íƒ€ì´ë° ë§ì¶°ì„œ ì‹ í˜¸ ì˜ëŠ” ê¸°ê³„)
+// =============================================================================
+module LCD_Driver (
+    input wire clk,
+    input wire rst_n,
+    input wire [7:0] i_data,
+    input wire i_rs,
+    input wire i_start,
+    output reg o_done,
+    output reg [7:0] o_lcd_data,
+    output reg o_lcd_rs,
+    output reg o_lcd_rw,
+    output reg o_lcd_en
+);
+    // ìƒíƒœ ì •ì˜
+    localparam S_IDLE  = 0;
+    localparam S_SETUP = 1; // RS, RW ì„¸íŒ…
+    localparam S_EN_H  = 2; // Enable High
+    localparam S_EN_L  = 3; // Enable Low (Hold)
+    localparam S_WAIT  = 4; // ì‹¤í–‰ ì‹œê°„ ëŒ€ê¸°
 
-            S_COUNTDOWN: begin
-                line1_buffer[3]="S"; line1_buffer[4]="T"; line1_buffer[5]="A";
-                line1_buffer[6]="R"; line1_buffer[7]="T";
-            end
+    reg [2:0] state;
+    reg [16:0] cnt; // íƒ€ì´ë¨¸
 
-            S_RUN: begin
-                // --- »êÁö´Ï Ç¥½Ã (Ä¿½ºÅÒ ¹®ÀÚ 0¹ø »ç¿ë) ---
-                if (char_y > 8'd10) 
-                    line1_buffer[2] = CHAR_SANJINI; // Á¡ÇÁ ½Ã À­ÁÙ
-                else 
-                    line2_buffer[2] = CHAR_SANJINI; // Æò¼Ò ¾Æ·§ÁÙ
-
-                // --- Àå¾Ö¹° Ç¥½Ã (Ä¿½ºÅÒ ¹®ÀÚ 1¹ø »ç¿ë) ---
-                // obs_x¸¦ 16Ä­À¸·Î ½ºÄÉÀÏ¸µ
-                if (obs_x[7:4] < 16) begin
-                    line2_buffer[obs_x[7:4]] = CHAR_OBSTACLE;
-                end
-            end
-
-            S_GAMEOVER: begin
-                line1_buffer[3]="G"; line1_buffer[4]="A"; line1_buffer[5]="M"; line1_buffer[6]="E";
-                line1_buffer[8]="O"; line1_buffer[9]="V"; line1_buffer[10]="E"; line1_buffer[11]="R";
-            end
-        endcase
-    end
-
-    // -------------------------------------------------------
-    // [3] LCD Á¦¾î FSM (CGRAM Load Ãß°¡)
-    // -------------------------------------------------------
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            lcd_e <= 0; lcd_rs <= 0; lcd_rw <= 0;
-            delay_cnt <= 0;
-            state_idx <= 0;
-            send_step <= 0;
+            state <= S_IDLE;
+            o_lcd_en <= 0;
+            o_lcd_rw <= 0; // Write Only
+            o_done <= 0;
         end else begin
-            if (delay_cnt < DELAY_INIT) begin
-                delay_cnt <= delay_cnt + 1;
-            end else begin
-                delay_cnt <= 0; // µô·¹ÀÌ ¸®¼Â
-                
-                case (state_idx)
-                    // === 1. ÃÊ±âÈ­ (Initialization) ===
-                    0: begin lcd_rs<=0; lcd_data<=8'h38; lcd_e<=1; state_idx<=state_idx+1; end // Function Set
-                    1: begin lcd_e<=0; state_idx<=state_idx+1; end
-                    2: begin lcd_rs<=0; lcd_data<=8'h0C; lcd_e<=1; state_idx<=state_idx+1; end // Display On
-                    3: begin lcd_e<=0; state_idx<=state_idx+1; end
-                    4: begin lcd_rs<=0; lcd_data<=8'h01; lcd_e<=1; state_idx<=state_idx+1; end // Clear
-                    5: begin lcd_e<=0; state_idx<=state_idx+1; end
-                    
-                    // === 2. CGRAM µ¥ÀÌÅÍ ·Îµå (Load Custom Char) ===
-                    // CGRAM Address Set (0x40ºÎÅÍ ½ÃÀÛ)
-                    6: begin 
-                         lcd_rs<=0; 
-                         lcd_data<=8'h40 + send_step; // 0x40 + offset
-                         lcd_e<=1; 
-                         state_idx<=state_idx+1; 
+            case (state)
+                S_IDLE: begin
+                    o_done <= 0;
+                    if (i_start) begin
+                        state <= S_SETUP;
+                        o_lcd_data <= i_data;
+                        o_lcd_rs <= i_rs;
+                        cnt <= 0;
                     end
-                    7: begin lcd_e<=0; state_idx<=state_idx+1; end
-                    
-                    // Pixel Data Write
-                    8: begin 
-                         lcd_rs<=1; // Data ¸ğµå
-                         lcd_data<= get_cgram_pixel(send_step); // ÇÈ¼¿ °¡Á®¿À±â
-                         lcd_e<=1; 
-                         state_idx<=state_idx+1; 
+                end
+                S_SETUP: begin
+                    // ë°ì´í„° ì…‹ì—… ì‹œê°„ (ì•½ 40ns ì´ìƒ í•„ìš” -> 50MHzì—ì„œ 2í´ëŸ­ì´ë©´ ì¶©ë¶„)
+                    if (cnt < 4) cnt <= cnt + 1;
+                    else begin
+                        state <= S_EN_H;
+                        o_lcd_en <= 1; // Pulse ì‹œì‘
+                        cnt <= 0;
                     end
-                    9: begin 
-                         lcd_e<=0; 
-                         // ÃÑ 16ÁÙ (8ÁÙ x 2±ÛÀÚ) ·Îµå ¹İº¹
-                         if(send_step < 15) begin
-                             send_step <= send_step + 1;
-                             state_idx <= 6; // ´Ù½Ã ÁÖ¼Ò ¼³Á¤ºÎÅÍ
-                         end else begin
-                             send_step <= 0;
-                             state_idx <= 10; // ¸ŞÀÎ ·çÇÁ·Î ÀÌµ¿
-                         end
+                end
+                S_EN_H: begin
+                    // Enable Pulse Width (ì•½ 230ns ì´ìƒ í•„ìš” -> 20í´ëŸ­ ë„‰ë„‰íˆ)
+                    if (cnt < 20) cnt <= cnt + 1;
+                    else begin
+                        state <= S_EN_L;
+                        o_lcd_en <= 0; // Pulse ë
+                        cnt <= 0;
                     end
-
-                    // === 3. ¸ŞÀÎ µğ½ºÇÃ·¹ÀÌ ·çÇÁ (Refresh) ===
-                    10: begin // Line 1 Ä¿¼­ ÀÌµ¿ (0x80)
-                        lcd_rs<=0; lcd_data<=8'h80; lcd_e<=1; 
-                        send_step<=0; state_idx<=state_idx+1; 
+                end
+                S_EN_L: begin
+                    // Hold Time
+                    if (cnt < 10) cnt <= cnt + 1;
+                    else begin
+                        state <= S_WAIT;
+                        cnt <= 0;
                     end
-                    11: begin lcd_e<=0; state_idx<=state_idx+1; end
-                    
-                    12: begin // Line 1 µ¥ÀÌÅÍ ¾²±â
-                        lcd_rs<=1; lcd_data<=line1_buffer[send_step]; lcd_e<=1;
-                        state_idx<=state_idx+1;
+                end
+                S_WAIT: begin
+                    // ëª…ë ¹ì–´ ì‹¤í–‰ ì‹œê°„ ëŒ€ê¸° (Data: 50us, Command: 2ms)
+                    // ì•ˆì „í•˜ê²Œ ëª¨ë‘ 2ms ëŒ€ê¸°í•˜ê±°ë‚˜, i_rsì— ë”°ë¼ êµ¬ë¶„ ê°€ëŠ¥
+                    // ì—¬ê¸°ì„  ê°„ë‹¨í•˜ê²Œ 50us ëŒ€ê¸° (Clear ëª…ë ¹ì€ ìƒìœ„ ëª¨ë“ˆì—ì„œ ê¸´ ëŒ€ê¸° í•„ìš”)
+                    if (cnt < 2500) cnt <= cnt + 1; 
+                    else begin
+                        state <= S_IDLE;
+                        o_done <= 1; // ì™„ë£Œ ì‹ í˜¸
                     end
-                    13: begin 
-                        lcd_e<=0; 
-                        if(send_step < 15) begin
-                            send_step <= send_step + 1;
-                            state_idx <= 12; 
-                        end else begin
-                            state_idx <= 20; // Line 2·Î
-                        end
-                    end
-
-                    20: begin // Line 2 Ä¿¼­ ÀÌµ¿ (0xC0)
-                        lcd_rs<=0; lcd_data<=8'hC0; lcd_e<=1; 
-                        send_step<=0; state_idx<=state_idx+1; 
-                    end
-                    21: begin lcd_e<=0; state_idx<=state_idx+1; end
-
-                    22: begin // Line 2 µ¥ÀÌÅÍ ¾²±â
-                        lcd_rs<=1; lcd_data<=line2_buffer[send_step]; lcd_e<=1;
-                        state_idx<=state_idx+1;
-                    end
-                    23: begin 
-                        lcd_e<=0; 
-                        if(send_step < 15) begin
-                            send_step <= send_step + 1;
-                            state_idx <= 22; 
-                        end else begin
-                            state_idx <= 10; // ´Ù½Ã Ã³À½À¸·Î ¹İº¹
-                        end
-                    end
-                endcase
-            end
+                end
+            endcase
         end
     end
 endmodule
