@@ -43,7 +43,7 @@ module lcd_controller (
     reg [4:0] send_idx; // 데이터 전송 인덱스 (0~15)
     
     // 타이밍 제어용
-    reg [20:0] delay_cnt; 
+    reg [31:0] delay_cnt; 
     parameter DELAY_20MS = 1000000;
 
     // =========================================================================
@@ -274,6 +274,15 @@ module lcd_controller (
                     case(col)
                         0: get_char_at = "G"; 1: get_char_at = "A"; 2: get_char_at = "M"; 3: get_char_at = "E";
                         5: get_char_at = "O"; 6: get_char_at = "V"; 7: get_char_at = "E"; 8: get_char_at = "R";
+                        default: get_char_at = " ";
+                    endcase
+                end
+            end else if (current_state == 2'b01) begin // RUN
+                 if (row == 0) begin
+                    // "GAME OVER !!! "
+                    case(col)
+                        0: get_char_at = "R"; 1: get_char_at = "E"; 2: get_char_at = "A"; 3: get_char_at = "D";
+                        4: get_char_at = "Y"; 5: get_char_at = "."; 6: get_char_at = "."; 7: get_char_at = ".";
                         default: get_char_at = " ";
                     endcase
                 end
