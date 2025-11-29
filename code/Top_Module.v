@@ -18,6 +18,8 @@ module Top_Module (
     wire w_game_active;             // 게임 활성 신호
     wire w_timer_en;                // 타이머 활성 신호
     wire w_system_init;             // 초기화 신호
+    wire w_stage;
+    
     
     wire w_countdown_done;          // Timer -> FSM (카운트다운 끝)
     wire w_collision;               // Collision -> FSM (충돌 발생)
@@ -25,7 +27,7 @@ module Top_Module (
     wire [3:0] w_countdown_val;     // Timer -> 7-Seg
     wire [15:0] w_play_time;        // Timer -> 7-Seg
     
-    wire [7:0] w_char_y;            // Char -> Collision
+    wire w_char_y;            // Char -> Collision
     wire [7:0] w_obs_x, w_obs_y;
     
     game_state_controller u_fsm (
@@ -47,17 +49,20 @@ module Top_Module (
         
         .countdown_val  (w_countdown_val),
         .countdown_done (w_countdown_done),
+        .stage          (w_stage),
         .play_time  (w_play_time)
      );
 
      seven_seg_controller u_seg(
         .clk    (clk),
         .rst_n  (rst_n),
-     
+        
         .current_state  (w_current_state),
         .countdown_val  (w_countdown_val),
         .play_time  (w_play_time),
         
+        .stage      (w_stage),
+        .stage_seg  (stage_seg),
         .seg_out    (seg),
         .seg_en     (seg_en)
     );
@@ -93,5 +98,20 @@ module Top_Module (
         .piezo_out      (piezo)             // 실제 외부 핀으로 나감!
     );
 
-
+    obstacle_controller u_obs(
+        .clk            (clk),
+        .rst_n          (rst_n),
+        .i_game_active  (w_game_active), 
+        .obs_x  (w_obs_x),
+        .obs_y  (w_obs_y)
+    
+    );
+    collision_detector  u_det(
+        .char_x         (w_char_x),           // Collision으로 보냄
+        .char_y         (w_char_y),    
+        .obs_x  (w_obs_x),
+        .obs_y  (w_obs_y),
+        
+        .collision_detected (w_collision)
+    );
 endmodule
