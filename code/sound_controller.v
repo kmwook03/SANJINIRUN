@@ -40,10 +40,6 @@ module sound_controller (
         end else begin
             // 우선순위: 충돌(게임오버) > 점프
             // 이미 소리가 나고 있어도 충돌이 발생하면 덮어씌움 (중요)
-            if (current_state == 2'b10)
-                tone_target  <= TONE_OVER;
-                sound_en     <= 1;
-                duration_cnt <= 25'd5_000_000;  // 0.1초 (50MHz * 0.1)
             if (i_collision) begin 
                 // [cite: 94] 충돌 시 게임오버 효과음 출력
                 tone_target  <= TONE_OVER;
