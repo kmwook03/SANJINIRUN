@@ -6,6 +6,8 @@ module seven_seg_controller (
     input wire [3:0] countdown_val,
     input wire [15:0] play_time,
     
+    output reg stage,
+    output reg [6:0] stage_seg,
     output reg [7:0] seg_out, // 개별 7-seg 패턴 (a~g)
     output reg [7:0] seg_en
 );
@@ -49,6 +51,7 @@ module seven_seg_controller (
     always @(*) begin
         // 제안서에 따르면 8 Array 7-Segment를 사용합니다.
         // 현재는 첫 번째 자리(맨 오른쪽)만 켜도록 설정 (Active Low: 0이 켜짐)
+        stage_seg = hex2seg(stage);
          for(i=0; i<8; i=i+1) seg_buffer[i] = 7'b0000000;
         
         if (current_state == S_COUNTDOWN) begin
