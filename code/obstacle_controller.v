@@ -3,30 +3,35 @@ module obstacle_controller (
     input wire rst_n,
     input wire i_game_active,
     
-    output reg [7:0] obs_x, // Àå¾Ö¹° X ÁÂÇ¥
-    output reg [7:0] obs_y  // Àå¾Ö¹° Y ÁÂÇ¥ (°øÁß/Áö»ó)
+    // [ì¤‘ìš” ìˆ˜ì •] 1ë¹„íŠ¸ -> 8ë¹„íŠ¸ë¡œ í™•ì¥
+    output reg [7:0] obs_x, // ì¥ì• ë¬¼ X ì¢Œí‘œ
+    output reg [7:0] obs_y  // ì¥ì• ë¬¼ Y ì¢Œí‘œ
 );
-    localparam SCREEN_WIDTH = 8'd100; // °¡»ó È­¸é ³Êºñ
-    localparam OBS_SPEED_CNT = 20'd100_000; // ÀÌµ¿ ¼Óµµ
+    localparam SCREEN_WIDTH = 8'd100; 
+    
+    // ì†ë„ ì„¤ì • (50,000,000 = 1ì´ˆ, ë„ˆë¬´ ëŠë¦¬ë©´ ê°’ì„ ì¤„ì´ì„¸ìš”. ì˜ˆ: 10_000_000)
+    localparam OBS_SPEED_CNT = 25_000_000; 
 
-    reg [19:0] speed_cnt;
+    reg [31:0] speed_cnt;
 
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            obs_x <= SCREEN_WIDTH;
-            obs_y <= 8'd10; // ÃÊ±â°ª: Áö»ó Àå¾Ö¹°
+    always @(posedge clk or posedge rst_n) begin
+        if (rst_n) begin // Active Low ì²´í¬ (!rst_n)
+            obs_x <= 15;
+            obs_y <= 1; 
+            speed_cnt <= 0;
         end else if (i_game_active) begin
             speed_cnt <= speed_cnt + 1;
             
             if (speed_cnt >= OBS_SPEED_CNT) begin
                 speed_cnt <= 0;
                 if (obs_x > 0) begin
-                    obs_x <= obs_x - 1; // ¿ŞÂÊÀ¸·Î ÀÌµ¿ [cite: 32] (¹è°æ ½ºÅ©·Ñ°ú À¯»ç)
+                    obs_x <= obs_x - 1; 
                 end else begin
-                    // È­¸é ³¡ µµ´Ş ½Ã ¸®½ºÆù
-                    obs_x <= SCREEN_WIDTH;
-                    // ·£´ı ´ë½Å ´Ü¼ø Åä±Û·Î Áö»ó/°øÁß Àå¾Ö¹° º¯°æ ¿¹½Ã [cite: 21]
-                    obs_y <= (obs_y == 8'd10) ? 8'd30 : 8'd10; 
+                    obs_x <= 15;
+                    // ë†’ì´ í† ê¸€ (ëœë¤ì„±)
+                    // obs_yê°€ 1ì´ë©´ 0ìœ¼ë¡œ, 0ì´ë©´ 1ë¡œ ë°”ê¿ˆ (ë‹¨, 8ë¹„íŠ¸ì´ë¯€ë¡œ 1/0 ê°’ ìœ ì§€ ì£¼ì˜)
+                    if (obs_y == 1) obs_y <= 0;
+                    else obs_y <= 1;
                 end
             end
         end
