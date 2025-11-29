@@ -4,7 +4,7 @@ module lcd_controller (
     
     // 게임 정보 입력
     input wire [1:0] current_state, // FSM 상태
-    input wire [7:0] char_y,        // 캐릭터 Y 좌표
+    input wire char_y,              // 캐릭터 Y 좌표 (0: 위, 1: 아래) [수정됨: 1bit]
     input wire [7:0] obs_x,         // 장애물 X 좌표
     input wire [7:0] obs_y,         // 장애물 Y 좌표
 
@@ -24,7 +24,7 @@ module lcd_controller (
     localparam CMD_ENTRY_MODE   = 8'h06;
     localparam CMD_SET_DDRAM    = 8'h80;
     localparam CMD_SET_DDRAM2   = 8'hC0;
-    localparam CMD_SET_CGRAM    = 8'h40;
+    // localparam CMD_SET_CGRAM = 8'h40; // [삭제] 필요 없음
 
     // FSM State Definition
     localparam S_POWER_ON    = 0;
@@ -32,33 +32,24 @@ module lcd_controller (
     localparam S_INIT_DISP   = 2;
     localparam S_INIT_CLR    = 3;
     localparam S_INIT_ENTRY  = 4;
-    localparam S_LOAD_CGRAM  = 5;
+    // localparam S_LOAD_CGRAM  = 5; // [삭제]
     localparam S_READY       = 6;
     localparam S_DRAW_LINE1  = 7;
-    localparam S_MOVE_LINE2  = 8; // [NEW] 줄바꿈 전용 상태
+    localparam S_MOVE_LINE2  = 8; 
     localparam S_DRAW_LINE2  = 9;
     localparam S_DONE        = 10;
 
     reg [3:0] state;
-    reg [4:0] send_idx; // 데이터 전송 인덱스 (0~15)
+    reg [4:0] send_idx; 
     
     // 타이밍 제어용
     reg [31:0] delay_cnt; 
     parameter DELAY_20MS = 1000000;
 
-    // =========================================================================
-    // 2. 커스텀 캐릭터 데이터 (산지니)
-    // =========================================================================
-    reg [7:0] cgram_sanjini [0:7];
-    initial begin
-        cgram_sanjini[0] = 5'b00110; cgram_sanjini[1] = 5'b01111;
-        cgram_sanjini[2] = 5'b11111; cgram_sanjini[3] = 5'b11111;
-        cgram_sanjini[4] = 5'b01110; cgram_sanjini[5] = 5'b11111;
-        cgram_sanjini[6] = 5'b01110; cgram_sanjini[7] = 5'b01010;
-    end
+    // [삭제] 커스텀 캐릭터 데이터 배열 삭제함
 
     // =========================================================================
-    // 3. 메인 FSM & Driver 연결
+    // 2. 메인 FSM & Driver 연결
     // =========================================================================
     
     // 내부 신호
@@ -67,7 +58,6 @@ module lcd_controller (
     reg start_send;
     wire send_done;
 
-    // [핵심] Handshake Flag: 1이면 드라이버가 일하는 중
     reg is_sent; 
 
     LCD_Driver driver (
@@ -91,12 +81,11 @@ module lcd_controller (
             start_send <= 0;
             is_sent <= 0;
         end else begin
-            // Pulse 신호 자동 Off
             if (start_send) start_send <= 0;
 
             case (state)
                 // -------------------------------------------------------------
-                // 초기화 시퀀스 (Handshake 패턴 적용)
+                // 초기화 시퀀스
                 // -------------------------------------------------------------
                 S_POWER_ON: begin
                     if (delay_cnt < DELAY_20MS) delay_cnt <= delay_cnt + 1;
@@ -139,49 +128,19 @@ module lcd_controller (
                         next_data <= CMD_ENTRY_MODE; next_rs <= 0;
                         start_send <= 1; is_sent <= 1;
                     end else if (send_done) begin
-                        state <= S_LOAD_CGRAM; 
+                        // [수정] CGRAM 로딩 없이 바로 그리기 준비 상태로 이동
+                        state <= S_READY; 
                         is_sent <= 0; 
                         send_idx <= 0;
                     end
                 end
 
-                // -------------------------------------------------------------
-                // CGRAM 로딩
-                // -------------------------------------------------------------
-                S_LOAD_CGRAM: begin
-                    // 1. 주소 설정 (send_idx == 0)
-                    if (send_idx == 0) begin
-                        if (!is_sent) begin
-                            next_data <= CMD_SET_CGRAM; next_rs <= 0;
-                            start_send <= 1; is_sent <= 1;
-                        end else if (send_done) begin
-                            is_sent <= 0;
-                            send_idx <= 1; // 데이터 전송 단계로 이동
-                        end
-                    end 
-                    // 2. 데이터 8바이트 전송 (send_idx 1~8)
-                    else if (send_idx <= 8) begin
-                        if (!is_sent) begin
-                            next_data <= cgram_sanjini[send_idx-1]; 
-                            next_rs <= 1; // Data Mode
-                            start_send <= 1; is_sent <= 1;
-                        end else if (send_done) begin
-                            is_sent <= 0;
-                            send_idx <= send_idx + 1;
-                        end
-                    end 
-                    // 3. 완료
-                    else begin
-                        state <= S_READY; 
-                        is_sent <= 0;
-                    end
-                end
+                // [삭제] S_LOAD_CGRAM 상태 제거됨
 
                 // -------------------------------------------------------------
                 // 화면 갱신 루프
                 // -------------------------------------------------------------
                 S_READY: begin
-                    // Line 1 주소 설정
                     if (!is_sent) begin
                         next_data <= CMD_SET_DDRAM; next_rs <= 0;
                         start_send <= 1; is_sent <= 1;
@@ -202,13 +161,12 @@ module lcd_controller (
                         if (send_idx < 15) begin
                             send_idx <= send_idx + 1;
                         end else begin
-                            state <= S_MOVE_LINE2; // [이동] 줄바꿈 상태로
+                            state <= S_MOVE_LINE2;
                         end
                     end
                 end
 
                 S_MOVE_LINE2: begin
-                    // Line 2 주소 설정 (안정성 확보)
                     if (!is_sent) begin
                         next_data <= CMD_SET_DDRAM2; next_rs <= 0;
                         start_send <= 1; is_sent <= 1;
@@ -236,8 +194,7 @@ module lcd_controller (
                 end
 
                 S_DONE: begin
-                    // 100ms 대기 (Refresh Rate Control)
-                    if (delay_cnt < 5000000) delay_cnt <= delay_cnt + 1;
+                    if (delay_cnt < 1_500_000) delay_cnt <= delay_cnt + 1;
                     else begin
                         state <= S_READY; 
                         delay_cnt <= 0;
@@ -249,7 +206,7 @@ module lcd_controller (
     end
 
     // =========================================================================
-    // 4. 화면 내용 결정 함수
+    // 3. 화면 내용 결정 함수 (수정됨)
     // =========================================================================
     function [7:0] get_char_at;
         input integer row; 
@@ -258,7 +215,6 @@ module lcd_controller (
             get_char_at = " "; 
 
             if (current_state == 2'b00) begin // IDLE
-                // "PRESS START   "
                 if (row == 0) begin
                    case(col)
                        0: get_char_at = "P"; 1: get_char_at = "R"; 2: get_char_at = "E";
@@ -270,45 +226,40 @@ module lcd_controller (
                 end
             end else if (current_state == 2'b11) begin // GAMEOVER
                  if (row == 0) begin
-                    // "GAME OVER !!! "
                     case(col)
                         0: get_char_at = "G"; 1: get_char_at = "A"; 2: get_char_at = "M"; 3: get_char_at = "E";
                         5: get_char_at = "O"; 6: get_char_at = "V"; 7: get_char_at = "E"; 8: get_char_at = "R";
                         default: get_char_at = " ";
                     endcase
                 end
-            end else if (current_state == 2'b01) begin // RUN
+            end else if (current_state == 2'b01) begin // RUN (문제에서 01로 가정)
                  if (row == 0) begin
-                    // "GAME OVER !!! "
                     case(col)
                         0: get_char_at = "R"; 1: get_char_at = "E"; 2: get_char_at = "A"; 3: get_char_at = "D";
                         4: get_char_at = "Y"; 5: get_char_at = "."; 6: get_char_at = "."; 7: get_char_at = ".";
                         default: get_char_at = " ";
                     endcase
                 end
-            end else begin // RUN or COUNTDOWN
-                // 1. 산지니 (Custom Char 0)
-                if (col == 1) begin 
-                    if (row == char_y) get_char_at = 8'h00; 
+            end else begin // 실제 게임 진행 (RUN or etc)
+                
+                // 1. 캐릭터 (@)
+                // character_controller가 char_y를 0(위)과 1(아래)로 바꿔줌.
+                // 현재 그리는 row와 char_y가 일치하면 @를 그림
+                if (col == 1 && row == char_y) begin 
+                    get_char_at = "@"; 
                 end
-                // 2. 장애물 ('X')
-                if (col == obs_x && row == obs_y) begin
+                
+                else if (col == obs_x && row == obs_y) begin
                     get_char_at = "X"; 
                 end
+
                 // 3. 바닥 ('_')
-                if (row == 1 && col != 1 && !(col == obs_x && row == obs_y)) begin
-                    get_char_at = "_";
-                end
+                // 아랫줄(row==1)이고, 캐릭터가 바닥에 있지 않고, 장애물도 없을 때만 바닥 그림
             end
         end
     endfunction
 
 endmodule
-
-
-// =============================================================================
-// LCD Driver (타이밍 안전성 강화됨)
-// =============================================================================
 module LCD_Driver (
     input wire clk,
     input wire rst_n,
@@ -375,10 +326,11 @@ module LCD_Driver (
                     // [중요 수정] 대기 시간 대폭 증가 (2ms)
                     // Clear 명령(1.53ms) 등 느린 명령도 안전하게 커버하기 위함
                     // 50MHz * 0.002s = 100,000 cycles
-                    if (cnt < 100_000) cnt <= cnt + 1; 
-                    else begin
+                    if ( (i_rs == 0 && i_data < 4) ? (cnt < 100_000) : (cnt < 2500) ) begin
+                        cnt <= cnt + 1;
+                    end else begin
                         state <= S_IDLE;
-                        o_done <= 1; // 완료 신호 발송
+                        o_done <= 1;
                     end
                 end
             endcase
