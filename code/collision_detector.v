@@ -6,14 +6,13 @@ module collision_detector (
     
     output reg collision_detected
 );
-    // Ãæµ¹ ¹Ú½º Å©±â Á¤ÀÇ (¿¹: 5x5 ÇÈ¼¿)
+    // ì¶©ëŒ ë°•ìŠ¤ í¬ê¸° ì •ì˜ (ì˜ˆ: 5x5 í”½ì…€)
     localparam SIZE = 5;
 
     always @(*) begin
-        // AABB (Axis-Aligned Bounding Box) Ãæµ¹ °¨Áö ·ÎÁ÷
-        // XÃàÀÌ °ãÄ¡°í AND YÃàÀÌ °ãÄ¡¸é Ãæµ¹ [cite: 91]
-        if ( (char_x < obs_x + SIZE) && (char_x + SIZE > obs_x) &&
-             (char_y < obs_y + SIZE) && (char_y + SIZE > obs_y) ) begin
+        // AABB (Axis-Aligned Bounding Box) ì¶©ëŒ ê°ì§€ ë¡œì§
+        // Xì¶•ì´ ê²¹ì¹˜ê³  AND Yì¶•ì´ ê²¹ì¹˜ë©´ ì¶©ëŒ [cite: 91]
+        if ( (char_x == obs_x) && (char_y == obs_y) ) begin
             collision_detected = 1'b1;
         end else begin
             collision_detected = 1'b0;
