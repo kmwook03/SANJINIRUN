@@ -1,46 +1,61 @@
-module Timer (
+module timer (
     input wire clk,
-    input wire rst,
-    input wire tick_1hz,       // 1초 단위 펄스 (From Clock_Divider)
+    input wire rst_n,
     input wire [1:0] current_state, // FSM 상태
     
-    output reg [3:0] o_time,   // 현재 시간 (표시용)
-    output reg o_timer_done    // 카운트다운 종료 알림
+    output reg [3:0] countdown_val, // 3, 2, 1 표시용
+    output reg countdown_done,      // 카운트다운 종료 신호
+    output reg [15:0] play_time     // 게임 플레이 시간 (초 단위)
 );
+    localparam S_COUNTDOWN = 2'b01;
+    localparam S_IDLE = 2'b00;
+    localparam S_RUN  = 2'b10;
 
-    localparam IDLE = 2'b00;
-    localparam COUNTDOWN = 2'b01;
-    localparam RUN = 2'b10;
-    localparam GAMEOVER = 2'b11;
-    
-    always @(posedge clk or posedge rst) begin
-        if (rst) begin
-            o_time <= 3;
-            o_timer_done <= 0;
-        end else begin
-            case (current_state)
-                IDLE: begin
-                    o_time <= 3;
-                    o_timer_done <= 0;
-                end
-                COUNTDOWN: begin
-                    if (tick_1hz) begin
-                        if (o_time > 1) begin
-                            o_time <= o_time - 1; // 3->2->1 
-                        end else begin
-                            o_time <= 0;
-                            o_timer_done <= 1;
-                        end
-                    end
-                end
-                RUN: begin
-                end
-                GAMEOVER: begin
-                end
-                
-                default: o_time <= 3;
-            endcase
+    parameter DELAY = 50_000_000;
+
+    reg [31:0] cnt;
+
+    wire tick_1s = (cnt == DELAY - 1);
+
+    always @(posedge clk or posedge rst_n) begin
+        if (rst_n)
+            cnt <= 32'd0;
+        else begin
+            if (current_state == S_IDLE)
+                cnt <= 32'd0;
+            else if (countdown_done)
+                cnt <= 32'd0;
+            else if (cnt >= DELAY - 1)
+                cnt <= 32'd0;
+            else
+                cnt <= cnt + 1;
         end
     end
-    
+    // 메인 타이머 로직
+    always @(posedge clk or posedge rst_n) begin
+        if (rst_n) begin
+            countdown_val <= 3;
+            countdown_done <= 0;
+            play_time <= 0;
+        end else begin
+            if (current_state == S_COUNTDOWN) begin
+                if (tick_1s) begin
+                    if (countdown_val > 1) 
+                        countdown_val <= countdown_val - 1;
+                    else begin
+                        countdown_val <= 0;
+                        countdown_done <= 1; // 0이 되면 완료 신호 [cite: 76]
+                    end
+                end
+            end else if (current_state == S_RUN) begin
+                countdown_done <= 0; // 리셋
+                if (tick_1s) 
+                    play_time <= play_time + 1; // [cite: 81] 카운트업
+            end else begin
+                // IDLE 등에서는 초기값 유지
+                countdown_val <= 3;
+                play_time <= 0;
+            end
+        end
+    end
 endmodule
