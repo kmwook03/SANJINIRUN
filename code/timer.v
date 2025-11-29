@@ -5,6 +5,7 @@ module timer (
     
     output reg [3:0] countdown_val, // 3, 2, 1 표시용
     output reg countdown_done,      // 카운트다운 종료 신호
+    output reg stage,
     output reg [15:0] play_time     // 게임 플레이 시간 (초 단위)
 );
     localparam S_COUNTDOWN = 2'b01;
@@ -49,6 +50,10 @@ module timer (
                 end
             end else if (current_state == S_RUN) begin
                 countdown_done <= 0; // 리셋
+                if(stage == 0)
+                    stage = 1;
+                else if(play_time / 60 + 1 > stage)
+                    stage = stage + 1;
                 if (tick_1s) 
                     play_time <= play_time + 1; // [cite: 81] 카운트업
             end else begin
