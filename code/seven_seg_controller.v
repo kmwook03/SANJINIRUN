@@ -1,40 +1,90 @@
 module seven_seg_controller (
+    input wire clk,
+    input wire rst_n,
+
     input wire [1:0] current_state,
     input wire [3:0] countdown_val,
     input wire [15:0] play_time,
     
-    output reg [6:0] seg_out, // °³º° 7-seg ÆĞÅÏ (a~g)
-    output reg [7:0] seg_en   // 8 Array 7-Seg ÀÚ¸® ¼±ÅÃ
+    output reg [7:0] seg_out, // ê°œë³„ 7-seg íŒ¨í„´ (a~g)
+    output reg [7:0] seg_en
 );
-    // Hex to 7-Seg µğÄÚµù ÇÔ¼ö (»ı·« °¡´ÉÇÏ³ª ÀÌÇØ¸¦ À§ÇØ Æ÷ÇÔ)
+
+    // -------------------------------------------------------
+    // Hex to 7-Seg ë””ì½”ë”© í•¨ìˆ˜ (Active Low: 0ì´ ì¼œì§)
+    // -------------------------------------------------------
     function [6:0] hex2seg;
         input [3:0] hex;
-        case(hex)
-            4'h0: hex2seg = 7'b1000000; // 0 (Active Low ±âÁØ)
-            4'h1: hex2seg = 7'b1111001; // 1
-            4'h2: hex2seg = 7'b0100100; // 2
-            4'h3: hex2seg = 7'b0110000; // 3
-            // ... ³ª¸ÓÁö »ı·« ...
-            default: hex2seg = 7'b1111111; // OFF
-        endcase
+        begin
+            case(hex)
+                4'h0: hex2seg = 7'b0111111; // 0
+                4'h1: hex2seg = 7'b0000110; // 1
+                4'h2: hex2seg = 7'b1011011; // 2
+                4'h3: hex2seg = 7'b1001111; // 3
+                4'h4: hex2seg = 7'b1100110; // 4
+                4'h5: hex2seg = 7'b1101101; // 5
+                4'h6: hex2seg = 7'b1111101; // 6
+                4'h7: hex2seg = 7'b0000111; // 7 (or 1011000)
+                4'h8: hex2seg = 7'b1111111; // 8
+                4'h9: hex2seg = 7'b1101111; // 9
+                
+                default: hex2seg = 7'b0000000; // OFF
+            endcase
+        end
     endfunction
 
     localparam S_COUNTDOWN = 2'b01;
     localparam S_RUN       = 2'b10;
+    
+    reg [6:0] seg_buffer [0:7];
+    integer i;
 
-    always @(*) begin
-        seg_en = 8'b11111110; // Ã¹ ¹øÂ° ÀÚ¸®¸¸ »ç¿ë ¿¹½Ã (Multiplexing ÇÊ¿ä ½Ã È®Àå)
-        
-        case (current_state)
-            S_COUNTDOWN: begin
-                // [cite: 74] Å¸ÀÌ¸Ó Ä«¿îÆ®´Ù¿î °ª Ç¥½Ã
-                seg_out = hex2seg(countdown_val);
-            end
-            S_RUN: begin
-                // [cite: 83] ÇÃ·¹ÀÌ ½Ã°£ ÇÏÀ§ 4ºñÆ® Ç¥½Ã (¿¹½Ã)
-                seg_out = hex2seg(play_time[3:0]);
-            end
-            default: seg_out = 7'b1111111; // OFF
-        endcase
+    reg [16:0] scan_cnt;
+    always @(posedge clk or posedge rst_n) begin
+        if (rst_n) scan_cnt <= 0;
+        else scan_cnt <= scan_cnt + 1;
     end
+
+    wire [2:0] digit_idx = scan_cnt[16:14];
+    
+    always @(*) begin
+        // ì œì•ˆì„œì— ë”°ë¥´ë©´ 8 Array 7-Segmentë¥¼ ì‚¬ìš©í•©ë‹ˆë‹¤.
+        // í˜„ì¬ëŠ” ì²« ë²ˆì§¸ ìë¦¬(ë§¨ ì˜¤ë¥¸ìª½)ë§Œ ì¼œë„ë¡ ì„¤ì • (Active Low: 0ì´ ì¼œì§)
+         for(i=0; i<8; i=i+1) seg_buffer[i] = 7'b0000000;
+
+        if (current_state == S_COUNTDOWN) begin
+            // 0ë²ˆ(ë§¨ ì˜¤ë¥¸ìª½) ìë¦¬ì— ì¹´ìš´íŠ¸ë‹¤ìš´ ê°’ ë„£ê¸°
+            seg_buffer[0] = hex2seg(countdown_val);
+            
+        end else if (current_state == S_RUN) begin
+            // í”Œë ˆì´ ì‹œê°„ ìë¦¿ìˆ˜ë³„ë¡œ ìª¼ê°œì„œ ë„£ê¸°
+            // seg_buffer[0] : 1ì˜ ìë¦¬
+            // seg_buffer[1] : 10ì˜ ìë¦¬
+            // seg_buffer[2] : 100ì˜ ìë¦¬ ...
+            seg_buffer[0] = hex2seg(play_time % 10);
+            seg_buffer[1] = hex2seg((play_time / 10) % 10);
+            seg_buffer[2] = hex2seg((play_time / 100) % 10);
+            seg_buffer[3] = hex2seg((play_time / 1000) % 10);
+        end
+        
+        if (current_state != S_COUNTDOWN && current_state != S_RUN) begin
+            seg_out = 8'b00000000;
+            seg_en  = 8'b00000000;
+        end
+        else begin
+            seg_out = {1'b0, seg_buffer[digit_idx]};
+        
+            case (digit_idx)
+                3'd0: seg_en = 8'b00000001;
+                3'd1: seg_en = 8'b00000010;
+                3'd2: seg_en = 8'b00000100;
+                3'd3: seg_en = 8'b00001000;
+                3'd4: seg_en = 8'b00010000;
+                3'd5: seg_en = 8'b00100000;
+                3'd6: seg_en = 8'b01000000;
+                3'd7: seg_en = 8'b10000000;
+                default: seg_en = 8'b00000000;
+            endcase
+        end
+    end            
 endmodule
