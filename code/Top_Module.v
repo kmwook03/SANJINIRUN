@@ -2,112 +2,96 @@ module Top_Module (
     input wire clk,
     input wire rst_n,
     input wire btn,
-    output reg [6:0] seg
+    input wire jump_btn,
+    
+    output wire [6:0] stage_seg,
+    output wire [6:0] seg,
+    output wire [7:0] seg_en,
+    output wire [7:0] o_lcd_data,
+    output wire o_lcd_rs,
+    output wire o_lcd_rw,
+    output wire o_lcd_en,
+    output wire piezo
 );
 
-    // ----------------------------
-    // 버튼 동기화 & 엣지 검출
-    // ----------------------------
-    reg btn_ff0, btn_ff1;
+    wire [1:0] w_current_state;     // FSM 상태 신호
+    wire w_game_active;             // 게임 활성 신호
+    wire w_timer_en;                // 타이머 활성 신호
+    wire w_system_init;             // 초기화 신호
+    
+    wire w_countdown_done;          // Timer -> FSM (카운트다운 끝)
+    wire w_collision;               // Collision -> FSM (충돌 발생)
+    
+    wire [3:0] w_countdown_val;     // Timer -> 7-Seg
+    wire [15:0] w_play_time;        // Timer -> 7-Seg
+    
+    wire [7:0] w_char_y;            // Char -> Collision
+    wire [7:0] w_obs_x, w_obs_y;
+    
+    game_state_controller u_fsm (
+        .clk              (clk),
+        .rst_n            (rst_n),
+        .i_btn_start      (btn),      // 외부 버튼 연결
+        .i_countdown_done (w_countdown_done), // 내부 와이어 연결 (Timer에서 옴)
+        .i_collision      (w_collision),      // 내부 와이어 연결 (Collision에서 옴)
+        
+        .current_state    (w_current_state),  // 다른 모듈들로 뿌려줌
+        .o_system_init    (w_system_init),
+        .o_game_active    (w_game_active)     // Character, Obstacle 모듈로 감
+    );  
+  
+    timer u_timer(
+        .clk    (clk),
+        .rst_n  (rst_n),
+        .current_state  (w_current_state),
+        
+        .countdown_val  (w_countdown_val),
+        .countdown_done (w_countdown_done),
+        .play_time  (w_play_time)
+     );
 
-    always @(posedge clk or negedge rst_n) begin
-        if (rst_n) begin
-            btn_ff0 <= 1'b0;
-            btn_ff1 <= 1'b0;
-        end else begin
-            btn_ff0 <= btn;
-            btn_ff1 <= btn_ff0;
-        end
-    end
+     seven_seg_controller u_seg(
+        .clk    (clk),
+        .rst_n  (rst_n),
+     
+        .current_state  (w_current_state),
+        .countdown_val  (w_countdown_val),
+        .play_time  (w_play_time),
+        
+        .seg_out    (seg),
+        .seg_en     (seg_en)
+    );
+    
+    lcd_controller u_lcd (
+        .clk            (clk),
+        .rst_n          (rst_n),
+        .current_state  (w_current_state), // FSM에서 상태 받기
+        .char_y         (w_char_y),        // 캐릭터 위치 받기 (점프 확인용)
+        .obs_x          (w_obs_x),         // 장애물 위치 받기 (표시용)
+        .obs_y          (w_obs_y),
 
-    wire btn_rise = btn_ff0 & ~btn_ff1;
+        .o_lcd_data     (o_lcd_data),
+        .o_lcd_rs       (o_lcd_rs),
+        .o_lcd_rw       (o_lcd_rw),
+        .o_lcd_en       (o_lcd_en)
+    );  
+    character_controller u_char (
+        .clk            (clk),
+        .rst_n          (rst_n),
+        .i_game_active  (w_game_active),      // FSM에서 받아옴
+        .i_btn_jump     (jump_btn),         // 외부 버튼 연결
+        
+        .char_y         (w_char_y),           // Collision으로 보냄
+        .char_x         ()                    // 고정값이면 연결 안 하거나 dummy 연결
+    );
+    sound_controller u_sound (
+        .clk            (clk),
+        .rst          (rst_n),
+        .i_btn_jump     (jump_btn),
+        .i_collision    (w_collision),
+        .current_state    (w_current_state),
+        .piezo_out      (piezo)             // 실제 외부 핀으로 나감!
+    );
 
-    // ----------------------------
-    // 상태 정의 (Verilog 방식)
-    // ----------------------------
-    parameter S_IDLE = 2'b00;
-    parameter S_3    = 2'b01;
-    parameter S_2    = 2'b10;
-    parameter S_1    = 2'b11;
-
-    reg [1:0] state, next_state;
-
-    // ----------------------------
-    // 딜레이 카운터
-    // ----------------------------
-    parameter DELAY = 25_000_000;
-
-    reg [31:0] cnt;
-
-    wire cnt_done = (cnt == DELAY - 1);
-
-    always @(posedge clk or negedge rst_n) begin
-        if (rst_n)
-            cnt <= 32'd0;
-        else begin
-            if (state == S_IDLE)
-                cnt <= 32'd0;
-            else if (cnt_done)
-                cnt <= 32'd0;
-            else
-                cnt <= cnt + 1;
-        end
-    end
-
-    // ----------------------------
-    // FSM next_state
-    // ----------------------------
-    always @(*) begin
-        case (state)
-            S_IDLE: begin
-                if (btn_rise) next_state = S_3;
-                else next_state = S_IDLE;
-            end
-
-            S_3: begin
-                if (cnt_done) next_state = S_2;
-                else next_state = S_3;
-            end
-
-            S_2: begin
-                if (cnt_done) next_state = S_1;
-                else next_state = S_2;
-            end
-
-            S_1: begin
-                if (cnt_done) next_state = S_IDLE;
-                else next_state = S_1;
-            end
-
-            default: next_state = S_IDLE;
-        endcase
-    end
-
-    // ----------------------------
-    // 상태 레지스터
-    // ----------------------------
-    always @(posedge clk or negedge rst_n) begin
-        if (rst_n)
-            state <= S_IDLE;
-        else
-            state <= next_state;
-    end
-
-    // ----------------------------
-    // 7세그 출력
-    // ----------------------------
-    localparam SEG_1   = 7'b0000110;
-    localparam SEG_2   = 7'b1011011;
-    localparam SEG_3   = 7'b1001111;
-    localparam SEG_OFF = 7'b1111111; //
-
-    always @(*) begin
-        case (state)
-            S_3: seg = SEG_3;
-            S_2: seg = SEG_2;
-            S_1: seg = SEG_1;
-            default: seg = SEG_OFF;
-        endcase
-    end
 
 endmodule
