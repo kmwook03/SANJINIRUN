@@ -44,21 +44,17 @@ module lcd_controller (
     
     // 타이밍 제어용
     reg [31:0] delay_cnt; 
-    parameter DELAY_20MS = 1000000;
-
-    // [삭제] 커스텀 캐릭터 데이터 배열 삭제함
+    parameter DELAY_20MS = 1000000; // 50MHz 기준 20ms 지연
 
     // =========================================================================
     // 2. 메인 FSM & Driver 연결
     // =========================================================================
     
-    // 내부 신호
+    // 내부 제어신호
     reg [7:0] next_data;
     reg next_rs;
     reg start_send;
     wire send_done;
-
-    reg is_sent; 
 
     LCD_Driver driver (
         .clk(clk),
@@ -72,7 +68,7 @@ module lcd_controller (
         .o_lcd_rw(o_lcd_rw),
         .o_lcd_en(o_lcd_en)
     );
-
+    reg is_sent;
     always @(posedge clk or posedge rst_n) begin
         if (rst_n) begin
             state <= S_POWER_ON;
@@ -135,7 +131,6 @@ module lcd_controller (
                     end
                 end
 
-                // [삭제] S_LOAD_CGRAM 상태 제거됨
 
                 // -------------------------------------------------------------
                 // 화면 갱신 루프
@@ -206,7 +201,7 @@ module lcd_controller (
     end
 
     // =========================================================================
-    // 3. 화면 내용 결정 함수 (수정됨)
+    // 3. 화면 내용 결정 함수 (캐릭터, 장애물)
     // =========================================================================
     function [7:0] get_char_at;
         input integer row; 
@@ -252,10 +247,7 @@ module lcd_controller (
                 else if (col == obs_x && row == obs_y) begin
                     get_char_at = "X"; 
                 end
-
-                // 3. 바닥 ('_')
-                // 아랫줄(row==1)이고, 캐릭터가 바닥에 있지 않고, 장애물도 없을 때만 바닥 그림
-            end
+             end
         end
     endfunction
 
