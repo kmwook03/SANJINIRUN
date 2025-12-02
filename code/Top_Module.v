@@ -18,7 +18,7 @@ module Top_Module (
     wire w_game_active;             // 게임 활성 신호
     wire w_timer_en;                // 타이머 활성 신호
     wire w_system_init;             // 초기화 신호
-    wire w_stage;
+    wire [2:0] w_stage;             // 스테이지 3개
     
     
     wire w_countdown_done;          // Timer -> FSM (카운트다운 끝)
@@ -36,7 +36,7 @@ module Top_Module (
         .i_btn_start      (btn),      // 외부 버튼 연결
         .i_countdown_done (w_countdown_done), // 내부 와이어 연결 (Timer에서 옴)
         .i_collision      (w_collision),      // 내부 와이어 연결 (Collision에서 옴)
-        
+        .stage            (w_stage),
         .current_state    (w_current_state),  // 다른 모듈들로 뿌려줌
         .o_system_init    (w_system_init),
         .o_game_active    (w_game_active)     // Character, Obstacle 모듈로 감
@@ -87,7 +87,7 @@ module Top_Module (
         .i_btn_jump     (jump_btn),         // 외부 버튼 연결
         
         .char_y         (w_char_y),           // Collision으로 보냄
-        .char_x         ()                    // 고정값이면 연결 안 하거나 dummy 연결
+        .char_x         (w_char_x)                    // 고정값이면 연결 안 하거나 dummy 연결
     );
     sound_controller u_sound (
         .clk            (clk),
@@ -101,7 +101,8 @@ module Top_Module (
     obstacle_controller u_obs(
         .clk            (clk),
         .rst_n          (rst_n),
-        .i_game_active  (w_game_active), 
+        .i_game_active  (w_game_active),
+        .stage          (w_stage), 
         .obs_x  (w_obs_x),
         .obs_y  (w_obs_y)
     
