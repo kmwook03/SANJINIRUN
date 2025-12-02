@@ -3,7 +3,8 @@ module lcd_controller (
     input wire rst_n,           // Reset (Active High로 가정: 1일 때 리셋)
     
     // 게임 정보 입력
-    input wire [1:0] current_state, // FSM 상태
+    input wire [2:0] current_state, // FSM 상태
+    input wire [2:0] stage,
     input wire char_y,              // 캐릭터 Y 좌표 (0: 위, 1: 아래) [수정됨: 1bit]
     input wire [7:0] obs_x,         // 장애물 X 좌표
     input wire [7:0] obs_y,         // 장애물 Y 좌표
@@ -24,7 +25,6 @@ module lcd_controller (
     localparam CMD_ENTRY_MODE   = 8'h06;
     localparam CMD_SET_DDRAM    = 8'h80;
     localparam CMD_SET_DDRAM2   = 8'hC0;
-    // localparam CMD_SET_CGRAM = 8'h40; // [삭제] 필요 없음
 
     // FSM State Definition
     localparam S_POWER_ON    = 0;
@@ -32,12 +32,18 @@ module lcd_controller (
     localparam S_INIT_DISP   = 2;
     localparam S_INIT_CLR    = 3;
     localparam S_INIT_ENTRY  = 4;
-    // localparam S_LOAD_CGRAM  = 5; // [삭제]
     localparam S_READY       = 6;
     localparam S_DRAW_LINE1  = 7;
     localparam S_MOVE_LINE2  = 8; 
     localparam S_DRAW_LINE2  = 9;
     localparam S_DONE        = 10;
+    
+    localparam FSM_IDLE = 3'b000;
+    localparam FSM_COUNTDOWN = 3'b001;
+    localparam FSM_RUN = 3'b010;
+    localparam FSM_GAMEOVER = 3'b011;
+    localparam FSM_STAGE_CLEAR = 3'b100;
+    localparam FSM_GAME_CLEAR = 3'b101;
 
     reg [3:0] state;
     reg [4:0] send_idx; 
@@ -208,46 +214,70 @@ module lcd_controller (
         input integer col; 
         begin
             get_char_at = " "; 
-
-            if (current_state == 2'b00) begin // IDLE
-                if (row == 0) begin
-                   case(col)
-                       0: get_char_at = "P"; 1: get_char_at = "R"; 2: get_char_at = "E";
-                       3: get_char_at = "S"; 4: get_char_at = "S"; 5: get_char_at = " ";
-                       6: get_char_at = "S"; 7: get_char_at = "T"; 8: get_char_at = "A";
-                       9: get_char_at = "R"; 10: get_char_at = "T";
-                       default: get_char_at = " ";
-                   endcase
+            
+            case (current_state)
+                FSM_IDLE:
+                    if (row == 0) begin
+                        case(col)
+                            0: get_char_at = "P"; 1: get_char_at = "R"; 2: get_char_at = "E";
+                            3: get_char_at = "S"; 4: get_char_at = "S"; 5: get_char_at = " ";
+                            6: get_char_at = "S"; 7: get_char_at = "T"; 8: get_char_at = "A";
+                            9: get_char_at = "R"; 10: get_char_at = "T";
+                            default: get_char_at = " ";
+                        endcase
+                    end
+                FSM_GAMEOVER:
+                    if (row == 0) begin
+                        case(col)
+                            0: get_char_at = "G"; 1: get_char_at = "A"; 2: get_char_at = "M"; 3: get_char_at = "E";
+                            5: get_char_at = "O"; 6: get_char_at = "V"; 7: get_char_at = "E"; 8: get_char_at = "R";
+                            default: get_char_at = " ";
+                        endcase
+                    end
+                FSM_COUNTDOWN:
+                    if (row == 0) begin
+                        case(col)
+                            0: get_char_at = "R"; 1: get_char_at = "E"; 2: get_char_at = "A"; 3: get_char_at = "D";
+                            4: get_char_at = "Y"; 5: get_char_at = "."; 6: get_char_at = "."; 7: get_char_at = ".";
+                            default: get_char_at = " ";
+                        endcase
+                    end
+                FSM_STAGE_CLEAR: begin
+                    if (row == 0) begin
+                        case (col)
+                            0: get_char_at = "S"; 1: get_char_at = "T"; 2: get_char_at = "A"; 3: get_char_at = "G";
+                            4: get_char_at = "E"; 6: get_char_at = (stage-1) + "0"; 8: get_char_at = "C";
+                            9: get_char_at = "L"; 10: get_char_at = "E"; 11: get_char_at = "A"; 12: get_char_at = "R";
+                            default: get_char_at = " ";
+                        endcase
+                    end
                 end
-            end else if (current_state == 2'b11) begin // GAMEOVER
-                 if (row == 0) begin
-                    case(col)
-                        0: get_char_at = "G"; 1: get_char_at = "A"; 2: get_char_at = "M"; 3: get_char_at = "E";
-                        5: get_char_at = "O"; 6: get_char_at = "V"; 7: get_char_at = "E"; 8: get_char_at = "R";
-                        default: get_char_at = " ";
-                    endcase
+                FSM_GAME_CLEAR: begin
+                    if (row == 0) begin
+                        case (col)
+                            0: get_char_at = "G"; 1: get_char_at = "A"; 2: get_char_at = "M"; 3: get_char_at = "E";
+                            5: get_char_at = "C"; 6: get_char_at = "L"; 7: get_char_at = "E"; 8: get_char_at = "A"; 9: get_char_at = "R";
+                            default: get_char_at = " ";
+                        endcase
+                    end
                 end
-            end else if (current_state == 2'b01) begin // RUN (문제에서 01로 가정)
-                 if (row == 0) begin
-                    case(col)
-                        0: get_char_at = "R"; 1: get_char_at = "E"; 2: get_char_at = "A"; 3: get_char_at = "D";
-                        4: get_char_at = "Y"; 5: get_char_at = "."; 6: get_char_at = "."; 7: get_char_at = ".";
-                        default: get_char_at = " ";
-                    endcase
-                end
-            end else begin // 실제 게임 진행 (RUN or etc)
+                FSM_RUN: begin // 실제 게임 진행 (RUN or etc)
                 
                 // 1. 캐릭터 (@)
                 // character_controller가 char_y를 0(위)과 1(아래)로 바꿔줌.
                 // 현재 그리는 row와 char_y가 일치하면 @를 그림
                 if (col == 1 && row == char_y) begin 
-                    get_char_at = "@"; 
+                    if (row == 1)
+                        get_char_at = "@"; 
+                    else
+                        get_char_at = "&";
                 end
                 
                 else if (col == obs_x && row == obs_y) begin
                     get_char_at = "X"; 
+                    end
                 end
-             end
+            endcase
         end
     endfunction
 
