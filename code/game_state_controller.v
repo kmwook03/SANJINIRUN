@@ -4,7 +4,7 @@ module game_state_controller (
     input wire i_btn_start,         // 입력: 게임 시작 버튼 (Debounced) 
     input wire i_countdown_done,    // 입력: Timer로부터 3초 카운트 완료 신호 
     input wire i_collision,         // 입력: Collision Detector로부터 충돌 감지 신호 
-    input wire stage,
+    input wire [2:0] stage,
     
     output reg [1:0] current_state, // 현재 상태 출력 (다른 모듈 제어용)
     output reg o_system_init,       // IDLE 상태에서 내부 레지스터 초기화 신호 
