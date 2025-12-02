@@ -14,12 +14,12 @@ module Top_Module (
     output wire piezo
 );
 
-    wire [1:0] w_current_state;     // FSM 상태 신호
+    wire [2:0] w_current_state;     // FSM 상태 신호
     wire w_game_active;             // 게임 활성 신호
     wire w_timer_en;                // 타이머 활성 신호
     wire w_system_init;             // 초기화 신호
     wire [2:0] w_stage;             // 스테이지 3개
-    
+    wire w_stage_cleared;
     
     wire w_countdown_done;          // Timer -> FSM (카운트다운 끝)
     wire w_collision;               // Collision -> FSM (충돌 발생)
@@ -36,6 +36,7 @@ module Top_Module (
         .i_btn_start      (btn),      // 외부 버튼 연결
         .i_countdown_done (w_countdown_done), // 내부 와이어 연결 (Timer에서 옴)
         .i_collision      (w_collision),      // 내부 와이어 연결 (Collision에서 옴)
+        .i_stage_cleared  (w_stage_cleared),
         .stage            (w_stage),
         .current_state    (w_current_state),  // 다른 모듈들로 뿌려줌
         .o_system_init    (w_system_init),
@@ -46,11 +47,12 @@ module Top_Module (
         .clk    (clk),
         .rst_n  (rst_n),
         .current_state  (w_current_state),
-        
+        .o_system_init  (w_system_init),
         .countdown_val  (w_countdown_val),
         .countdown_done (w_countdown_done),
         .stage          (w_stage),
-        .play_time  (w_play_time)
+        .play_time  (w_play_time),
+        .stage_cleared (w_stage_cleared)
      );
 
      seven_seg_controller u_seg(
@@ -71,6 +73,7 @@ module Top_Module (
         .clk            (clk),
         .rst_n          (rst_n),
         .current_state  (w_current_state), // FSM에서 상태 받기
+        .stage          (w_stage),
         .char_y         (w_char_y),        // 캐릭터 위치 받기 (점프 확인용)
         .obs_x          (w_obs_x),         // 장애물 위치 받기 (표시용)
         .obs_y          (w_obs_y),
