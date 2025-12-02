@@ -2,11 +2,11 @@ module seven_seg_controller (
     input wire clk,
     input wire rst_n,
 
-    input wire [1:0] current_state,
+    input wire [2:0] current_state,
     input wire [3:0] countdown_val,
     input wire [15:0] play_time,
     
-    output reg stage,
+    output reg [3:0] stage,
     output reg [6:0] stage_seg,
     output reg [7:0] seg_out, // 개별 7-seg 패턴 (a~g)
     output reg [7:0] seg_en
