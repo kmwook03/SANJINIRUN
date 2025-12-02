@@ -4,9 +4,10 @@ module game_state_controller (
     input wire i_btn_start,         // 입력: 게임 시작 버튼 (Debounced) 
     input wire i_countdown_done,    // 입력: Timer로부터 3초 카운트 완료 신호 
     input wire i_collision,         // 입력: Collision Detector로부터 충돌 감지 신호 
+    input wire i_stage_cleared, 
     input wire [2:0] stage,
     
-    output reg [1:0] current_state, // 현재 상태 출력 (다른 모듈 제어용)
+    output reg [2:0] current_state, // 현재 상태 출력 (다른 모듈 제어용)
     output reg o_system_init,       // IDLE 상태에서 내부 레지스터 초기화 신호 
     output reg o_game_active        // 게임 진행 중 (RUN) 신호
 );
@@ -14,12 +15,17 @@ module game_state_controller (
     // -------------------------------------------------------
     // State Definition 
     // -------------------------------------------------------
-    localparam S_IDLE      = 2'b00;
-    localparam S_COUNTDOWN = 2'b01;
-    localparam S_RUN       = 2'b10;
-    localparam S_GAMEOVER  = 2'b11;
+    localparam S_IDLE      = 3'b000;
+    localparam S_COUNTDOWN = 3'b001;
+    localparam S_RUN       = 3'b010;
+    localparam S_GAMEOVER  = 3'b011;
+    localparam S_STAGE_CLEAR = 3'b100;
+    localparam S_GAME_CLEAR = 3'b101;
 
-    reg [1:0] next_state;
+    reg [2:0] next_state;
+    
+    reg [31:0] delay_cnt;
+    parameter STAGE_CLEAR_DELAY = 100_000_000;
     // -------------------------------------------------------
     // Sequential Logic: State Register
     // ------------------------------------------------------- 
@@ -28,6 +34,16 @@ module game_state_controller (
             current_state <= S_IDLE;
         end else begin
             current_state <= next_state;
+        end
+    end
+    
+    always @(posedge clk or posedge rst_n) begin
+        if (rst_n) begin
+            delay_cnt <= 0;
+        end else if (next_state != S_STAGE_CLEAR) begin
+            delay_cnt <= 0;
+        end else if (delay_cnt < STAGE_CLEAR_DELAY) begin
+            delay_cnt <= delay_cnt + 1;
         end
     end
 
@@ -62,23 +78,36 @@ module game_state_controller (
             S_RUN: begin
                 if (i_collision)
                     next_state = S_GAMEOVER;
-                else
+                else if (i_stage_cleared) begin
+                    if (stage < 3)
+                        next_state = S_STAGE_CLEAR;
+                    else
+                        next_state = S_GAME_CLEAR;
+                end else
                     next_state = S_RUN;
+            end
+            
+            S_STAGE_CLEAR: begin
+                if (delay_cnt >= STAGE_CLEAR_DELAY)
+                    next_state = S_COUNTDOWN;
+                else
+                    next_state = S_STAGE_CLEAR;
+            end
+            
+            S_GAME_CLEAR: begin
+                next_state = S_GAME_CLEAR;
             end
 
             // [state] GAMEOVER 
-            // 제안서 source 98: "시스템 리셋을 대기한다"
-            // 제안서 source 104: "다음 클럭에 IDLE state로 전이한다" 
-            // (해석: 리셋 버튼이 눌리거나, 특정 확인 후 IDLE로 돌아감. 
-            // 여기서는 하드웨어 rst_n에 의해 IDLE로 가는 것이 기본이지만,
-            // 자동 복귀를 원할 경우 아래 주석 해제)
             S_GAMEOVER: begin
                 // rst_n이 눌리기 전까지 대기 (Source 98 기준)
-                next_state = S_GAMEOVER; 
-                
+                if (i_btn_start)
+                    next_state = S_IDLE;
+                else
+                    next_state = S_GAMEOVER; 
+            end
                 // 만약 Source 104(자동 IDLE 복귀)를 따르고 싶다면:
                 // next_state = S_IDLE; 
-            end
             
             default: next_state = S_IDLE;
         endcase
@@ -107,7 +136,7 @@ module game_state_controller (
                 o_game_active = 1'b1; // Character, Obstacle 제어용
             end
 
-            S_GAMEOVER: begin
+            S_STAGE_CLEAR, S_GAME_CLEAR, S_GAMEOVER: begin
                 // RUN state의 모든 동작 정지
                 o_game_active = 1'b0;
                 // LCD Controller에게 'Game Over' 출력 지시 (current_state로 판별)
