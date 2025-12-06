@@ -79,7 +79,7 @@ module game_state_controller (
                 if (i_collision)
                     next_state = S_GAMEOVER;
                 else if (i_stage_cleared) begin
-                    if (stage < 3)
+                    if (stage < 4)
                         next_state = S_STAGE_CLEAR;
                     else
                         next_state = S_GAME_CLEAR;
