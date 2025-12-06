@@ -98,6 +98,7 @@ module Top_Module (
         .i_btn_jump     (jump_btn),
         .i_collision    (w_collision),
         .current_state    (w_current_state),
+        .i_stage_cleared  (w_stage_cleared),
         .piezo_out      (piezo)             // 실제 외부 핀으로 나감!
     );
 
@@ -111,6 +112,7 @@ module Top_Module (
         .obs_y  (w_obs_y)
     
     );
+    
     collision_detector  u_det(
         .char_x         (w_char_x),           // Collision으로 보냄
         .char_y         (w_char_y),    
