@@ -105,6 +105,7 @@ module Top_Module (
         .clk            (clk),
         .rst_n          (rst_n),
         .i_game_active  (w_game_active),
+        .current_state  (w_current_state),
         .stage          (w_stage), 
         .obs_x  (w_obs_x),
         .obs_y  (w_obs_y)
