@@ -53,7 +53,6 @@ module timer (
             case (current_state)
                 S_COUNTDOWN: begin
                     play_time <= 0;
-                    stage <= stage + 1;
                     countdown_done <= 0;
                     if (tick_1s) begin
                         if (countdown_val > 1) begin
@@ -69,8 +68,9 @@ module timer (
                     if (tick_1s) begin
                         play_time <= play_time + 1;
                         if ((play_time + 1) % STAGE_DURATION == 0) begin
-                            if (stage < 3) begin
+                            if (stage < 4) begin
                                 stage_cleared <= 1;
+                                stage <= stage + 1;
                             end else if (stage == 4) begin
                                 stage_cleared <= 1;
                             end
