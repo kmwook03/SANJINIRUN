@@ -2,6 +2,7 @@ module obstacle_controller (
     input wire clk,
     input wire rst_n,
     input wire i_game_active,
+    input wire [2:0] current_state, 
     input wire [3:0] stage,
     
     output reg [7:0] obs_x, // 장애물 X 좌표
@@ -47,7 +48,7 @@ module obstacle_controller (
     // 3. 장애물 이동 및 위치 결정
     // ====================================================
     always @(posedge clk or posedge rst_n) begin
-        if (rst_n) begin
+        if (rst_n || current_state == 3'b100) begin
             obs_x <= SCREEN_WIDTH - 1;
             obs_y <= 1; 
             speed_cnt <= 0;
