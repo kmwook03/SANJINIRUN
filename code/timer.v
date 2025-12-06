@@ -21,7 +21,7 @@ module timer (
 
     parameter DELAY = 50_000_000;
  
-    parameter STAGE_DURATION = 10;
+    parameter STAGE_DURATION = 15;
 
     reg [31:0] cnt;
     wire tick_1s = (cnt == DELAY - 1);
