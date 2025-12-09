@@ -41,7 +41,7 @@ module obstacle_controller (
             case (stage)
                 3'd0, 3'd1: current_obs_speed_cnt <= OBS_SPEED_BASE;
                 3'd2:       current_obs_speed_cnt <= (OBS_SPEED_BASE >> 1); 
-                3'd3:       current_obs_speed_cnt <= (OBS_SPEED_BASE >> 2); 
+                3'd3:       current_obs_speed_cnt <= (4_000_000); 
                 default:    current_obs_speed_cnt <= OBS_SPEED_BASE;
             endcase
         end
