@@ -37,7 +37,7 @@ module seven_seg_controller (
 
     localparam S_COUNTDOWN = 2'b01;
     localparam S_RUN       = 2'b10;
-    
+    localparam S_GAME_CLEAR  = 3'b101;
     reg [6:0] seg_buffer [0:7];
     integer i;
 
@@ -53,7 +53,10 @@ module seven_seg_controller (
         // 현재는 첫 번째 자리(맨 오른쪽)만 켜도록 설정 (Active Low: 0이 켜짐)
         stage_seg = hex2seg(stage);
          for(i=0; i<8; i=i+1) seg_buffer[i] = 7'b0000000;
-        
+        /*
+        if (current_state == S_GAME_CLEAR) begin
+            stage_seg = hex2seg(0);
+        */
         if (current_state == S_COUNTDOWN) begin
             // 0번(맨 오른쪽) 자리에 카운트다운 값 넣기
             seg_buffer[0] = hex2seg(countdown_val);
