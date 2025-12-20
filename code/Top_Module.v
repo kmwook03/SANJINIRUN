@@ -4,6 +4,7 @@ module Top_Module (
     input wire btn,
     input wire jump_btn,
     
+    output wire [4:0] life,
     output wire [6:0] stage_seg,
     output wire [6:0] seg,
     output wire [7:0] seg_en,
@@ -38,6 +39,7 @@ module Top_Module (
         .i_collision      (w_collision),      // 내부 와이어 연결 (Collision에서 옴)
         .i_stage_cleared  (w_stage_cleared),
         .stage            (w_stage),
+        .life             (life),
         .current_state    (w_current_state),  // 다른 모듈들로 뿌려줌
         .o_system_init    (w_system_init),
         .o_game_active    (w_game_active)     // Character, Obstacle 모듈로 감
